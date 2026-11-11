@@ -1,0 +1,111 @@
+{
+  "name": "salary-time",
+  "productName": "SalaryTime",
+  "version": "1.0.0",
+  "description": "实时工资悬浮窗：当日、当刻、本月、本周收入一目了然",
+  "main": "src/main.js",
+  "type": "commonjs",
+  "author": "CurryKernel",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://gitcode.com/CurryKernel/salary-time.git"
+  },
+  "keywords": [
+    "electron",
+    "salary",
+    "widget",
+    "desktop"
+  ],
+  "scripts": {
+    "start": "node scripts/electron-run.js",
+    "dev": "node scripts/electron-run.js",
+    "test": "node --test test/calc.test.js",
+    "icons": "python3 scripts/generate_icons.py",
+    "pack:dir": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:win:portable": "electron-builder --win portable",
+    "dist:mac": "electron-builder --mac",
+    "test:ui": "node scripts/electron-run.js test/ui-smoke.js"
+  },
+  "build": {
+    "appId": "com.currykernel.salarytime",
+    "copyright": "Copyright © 2026 CurryKernel",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "asar": true,
+    "compression": "normal",
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "executableName": "SalaryTime",
+      "signExecutable": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": true,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "工资实时统计",
+      "installerLanguages": [
+        "zh_CN",
+        "en_US"
+      ],
+      "language": "2052",
+      "artifactName": "SalaryTime-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico"
+    },
+    "portable": {
+      "artifactName": "SalaryTime-Portable-${version}.${ext}"
+    },
+    "mac": {
+      "icon": "build/icon.png",
+      "category": "public.app-category.finance",
+      "target": [
+        "dmg"
+      ]
+    },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      },
+      {
+        "from": "build/tray.png",
+        "to": "tray.png"
+      }
+    ]
+  },
+  "devDependencies": {
+    "electron": "^45.3.0",
+    "electron-builder": "^26.18.0"
+  }
+}
