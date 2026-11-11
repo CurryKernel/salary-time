@@ -8,6 +8,8 @@
 
 <img src="docs/screenshot-settings.png" width="400" alt="设置面板">
 
+> 安装包下载、更新说明与文件校验见 [v1.0.0 发布说明](docs/release-notes-v1.0.0.md)。
+
 ## 功能
 
 - **今日已赚**：按今天的工作进度实时跳动，精确到分；午休期间冻结，下班后保持满额。
@@ -85,12 +87,12 @@
 
 ## 在 macOS 上使用
 
-已生成可直接双击的 macOS 应用（Apple Silicon）：
+**从源码安装**：请直接看 [macOS 安装教程](docs/macos-install.md)——包含 Node.js 安装、拉取代码、构建 DMG、安装到「应用程序」以及常见问题，Apple Silicon 和 Intel 都适用。
+
+如果使用已构建好的安装包（本机运行过 `npm run dist:mac` 后生成）：
 
 - DMG 安装包：`dist/SalaryTime-1.0.0-arm64.dmg`（双击挂载，把 SalaryTime 拖进「应用程序」）
 - 也可以直接双击 `dist/mac-arm64/SalaryTime.app`
-
-本机已经安装到 `/Applications/SalaryTime.app`，可通过 Spotlight（`⌘ + 空格` 搜索 SalaryTime）或「启动台」打开。
 
 > 程序不会占用 Dock；关闭时点悬浮窗右上角的 **×** 即可，也可以在菜单栏的 **¥** 托盘菜单里选择「退出」。
 > 若从网络下载 DMG 后提示「无法验证开发者」，右键应用选择「打开」即可。
