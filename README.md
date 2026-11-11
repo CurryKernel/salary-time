@@ -134,7 +134,7 @@ npm install
 npm run dist:mac
 ```
 
-产物：`dist/SalaryTime-1.0.0-arm64.dmg`（未签名，本机使用没有问题）。
+产物：`dist/SalaryTime-1.0.0-arm64.dmg`。未签名 DMG 在部分 macOS 上会被 Gatekeeper 拦截，日常使用推荐上面的 `npm run install:mac` 启动器方式。
 
 ## 打包 Windows exe
 
