@@ -27,7 +27,8 @@
     "dist:win": "electron-builder --win",
     "dist:win:portable": "electron-builder --win portable",
     "dist:mac": "electron-builder --mac",
-    "test:ui": "node scripts/electron-run.js test/ui-smoke.js"
+    "test:ui": "node scripts/electron-run.js test/ui-smoke.js",
+    "install:mac": "node scripts/install-macos-launcher.js"
   },
   "build": {
     "appId": "com.currykernel.salarytime",

@@ -174,6 +174,31 @@ async function main() {
   state = await run(`document.getElementById('settingsView').hidden`);
   ok('Esc 关闭设置页', state === true);
 
+  // 时间输入：中间值不能立即回退（否则小时位无法输入第二位数字）
+  await run(`(() => {
+    const input = document.getElementById('workEnd');
+    input.value = '01:00';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(150);
+  state = await run(`document.getElementById('workEnd').value`);
+  ok('下班时间的小时中间值不会被立即回退', state === '01:00', state);
+  ok('非法中间值不会写入设置', !calls.saves.some((p) => p.workEnd === '01:00'));
+
+  await run(`document.getElementById('workEnd').dispatchEvent(new Event('blur', { bubbles: true }))`);
+  await sleep(150);
+  state = await run(`document.getElementById('workEnd').value`);
+  ok('失焦后非法时间恢复原值', state === '18:00', state);
+
+  await run(`(() => {
+    const input = document.getElementById('workEnd');
+    input.value = '17:30';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`document.getElementById('workEnd').value`);
+  ok('合法的下班时间可以正常保存', state === '17:30' && calls.saves.some((p) => p.workEnd === '17:30'), state);
+
   // 隐藏与退出按钮
   await run(`document.getElementById('hideBtn').click()`);
   await sleep(120);

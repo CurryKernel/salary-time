@@ -8,7 +8,8 @@
 | --- | --- | --- | --- |
 | Windows 10 / 11（x64） | `SalaryTime-Setup-1.0.0.exe` | 约 116 MB | 安装版，可选安装目录，自动创建桌面快捷方式 |
 | Windows 10 / 11（x64） | `SalaryTime-Portable-1.0.0.exe` | 约 105 MB | 免安装便携版，双击即可运行 |
-| macOS（Apple Silicon） | `SalaryTime-1.0.0-arm64.dmg` | 约 116 MB | 打开后把 SalaryTime 拖入「应用程序」 |
+
+macOS 用户请按 [macOS 安装教程](macos-install.md) 拉取源码后执行 `npm run install:mac`，会安装一个可双击的「工资实时统计.app」，无需 Apple 开发者账号或代码签名。
 
 ## 功能亮点
 
@@ -36,11 +37,11 @@
 
 ## 注意事项
 
-- 安装包未做商业代码签名。Windows 首次运行若提示「Windows 已保护你的电脑」，请点击「更多信息 → 仍要运行」；macOS 若提示无法验证开发者，请右键应用选择「打开」。
+- Windows 安装包未做商业代码签名，首次运行若提示「Windows 已保护你的电脑」，请点击「更多信息 → 仍要运行」。
 - 「月末周六」指每月最后一个周六，属于额外双倍加班日，不含绩效。
 - 21.75 天模式下，本月预计 = 当月工作日数 × 日薪 + 月末周六双倍，可能略高于月薪，这是按 21.75 摊算并叠加加班日的正常结果。
 - 软件不内置法定节假日日历，实际工作日默认只统计周一至周五。
-- macOS 版本为 Apple Silicon（arm64）构建。
+- macOS 推荐使用源码 + `npm run install:mac` 的方式；直接双击未签名的 DMG 在部分 macOS 上会被系统拦截。
 
 ## 文件校验
 
@@ -49,11 +50,6 @@
 ```powershell
 # Windows PowerShell
 Get-FileHash .\SalaryTime-Setup-1.0.0.exe -Algorithm SHA256
-```
-
-```bash
-# macOS
-shasum -a 256 SalaryTime-1.0.0-arm64.dmg
 ```
 
 校验和清单见发布附件中的 `SHA256SUMS-1.0.0.txt`。

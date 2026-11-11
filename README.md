@@ -87,15 +87,19 @@
 
 ## 在 macOS 上使用
 
-**从源码安装**：请直接看 [macOS 安装教程](docs/macos-install.md)——包含 Node.js 安装、拉取代码、构建 DMG、安装到「应用程序」以及常见问题，Apple Silicon 和 Intel 都适用。
+推荐使用一键启动器方式，不需要 Apple 开发者账号，也不用处理未签名应用的 Gatekeeper 拦截：
 
-如果使用已构建好的安装包（本机运行过 `npm run dist:mac` 后生成）：
+```bash
+npm install
+npm run install:mac
+```
 
-- DMG 安装包：`dist/SalaryTime-1.0.0-arm64.dmg`（双击挂载，把 SalaryTime 拖进「应用程序」）
-- 也可以直接双击 `dist/mac-arm64/SalaryTime.app`
+完成后从「启动台」或 Spotlight 搜索 **工资实时统计** 打开；关闭时点悬浮窗右上角的 **×**。
 
-> 程序不会占用 Dock；关闭时点悬浮窗右上角的 **×** 即可，也可以在菜单栏的 **¥** 托盘菜单里选择「退出」。
-> 若从网络下载 DMG 后提示「无法验证开发者」，右键应用选择「打开」即可。
+> 启动器引用当前项目目录，如果移动或删除了项目，请在新位置重新执行 `npm run install:mac`。
+> 需要开机自启时，请到「系统设置 → 通用 → 登录项」中添加「工资实时统计.app」。
+> 详细步骤与常见问题见 [macOS 安装教程](docs/macos-install.md)。
+> `npm run dist:mac` 仍可生成传统 DMG，但未签名 DMG 在部分 macOS 上无法直接双击启动。
 
 ## 在 Windows 上使用
 
@@ -177,7 +181,7 @@ npx electron-builder --win portable --x64
 
 ```bash
 npm test        # 计薪逻辑单元测试（17 项）
-npm run test:ui # 渲染层冒烟测试（28 项断言，需要桌面环境）
+npm run test:ui # 渲染层冒烟测试（32 项断言，需要桌面环境）
 ```
 
 单元测试覆盖：21.75 / 实际工作日两种模式、月末周六双倍、午休冻结、跨月周累计、自定义工时、倒计时等。
@@ -201,6 +205,7 @@ salary-time/
 │   └── ui-smoke.js          # Electron UI 冒烟测试
 ├── scripts/
 │   ├── electron-run.js      # 跨平台启动包装
+│   ├── install-macos-launcher.js  # 生成 macOS 双击启动器
 │   └── generate_icons.py    # 生成 png / ico / 托盘图标
 ├── build/                   # 图标资源
 ├── docs/                    # 截图

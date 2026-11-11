@@ -49,6 +49,7 @@
     lunchEnd: $('lunchEnd'),
     alwaysOnTop: $('alwaysOnTop'),
     openAtLogin: $('openAtLogin'),
+    openAtLoginRow: $('openAtLoginRow'),
     previewDaily: $('previewDaily'),
     previewSaturday: $('previewSaturday'),
     previewMonth: $('previewMonth'),
@@ -62,6 +63,7 @@
 
   let settings = Object.assign({}, Defaults.DEFAULT_SETTINGS);
   let computed = null;
+  let packaged = false;
   let view = 'widget';
 
   let pendingPatch = {};
@@ -76,6 +78,7 @@
     try {
       const state = await window.salary.getState();
       if (state && state.settings) settings = state.settings;
+      packaged = !!(state && state.packaged);
     } catch (error) {
       console.error('读取设置失败', error);
     }
@@ -193,6 +196,7 @@
 
   function updateDerivedUI(c) {
     if (!c) return;
+    if (ui.openAtLoginRow) ui.openAtLoginRow.hidden = !packaged;
     const active = !!settings.useActualWorkdays;
     ui.standardWorkdaysRow.hidden = active;
     ui.actualWorkdaysBox.hidden = !active;
@@ -216,18 +220,24 @@
 
   /* ----------------------------- 表单 ----------------------------- */
 
-  function fillFormValues() {
-    ui.baseSalary.value = trimNumber(settings.baseSalary);
-    ui.bonusSalary.value = trimNumber(settings.bonusSalary);
-    ui.standardWorkdays.value = trimNumber(settings.standardWorkdays);
-    ui.actualWorkdaysOverride.value = settings.actualWorkdaysOverride > 0
+  function fillFormValues(force) {
+    // 保存回包会刷新表单；正在输入/编辑的控件跳过，避免打断用户
+    const setValue = (input, value) => {
+      if (force || document.activeElement !== input) input.value = value;
+    };
+
+    setValue(ui.baseSalary, trimNumber(settings.baseSalary));
+    setValue(ui.bonusSalary, trimNumber(settings.bonusSalary));
+    setValue(ui.standardWorkdays, trimNumber(settings.standardWorkdays));
+    setValue(ui.actualWorkdaysOverride, settings.actualWorkdaysOverride > 0
       ? String(settings.actualWorkdaysOverride)
-      : '';
+      : '');
+    setValue(ui.workStart, settings.workStart);
+    setValue(ui.workEnd, settings.workEnd);
+    setValue(ui.lunchStart, settings.lunchStart);
+    setValue(ui.lunchEnd, settings.lunchEnd);
+
     ui.useActualWorkdays.checked = !!settings.useActualWorkdays;
-    ui.workStart.value = settings.workStart;
-    ui.workEnd.value = settings.workEnd;
-    ui.lunchStart.value = settings.lunchStart;
-    ui.lunchEnd.value = settings.lunchEnd;
     ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     ui.openAtLogin.checked = !!settings.openAtLogin;
   }
@@ -301,21 +311,35 @@
 
   function bindTime(id, key) {
     const input = ui[id];
+
+    const orderIsValid = (value) => {
+      if (key === 'workStart') return toSeconds(value) < toSeconds(settings.workEnd);
+      if (key === 'workEnd') return toSeconds(value) > toSeconds(settings.workStart);
+      if (key === 'lunchStart') return toSeconds(value) <= toSeconds(settings.lunchEnd);
+      if (key === 'lunchEnd') return toSeconds(value) >= toSeconds(settings.lunchStart);
+      return true;
+    };
+
+    // 键盘输入小时时会出现 01:00 之类的中间值。
+    // change 在输入过程中就会触发，此时不能立刻回退，否则第二位数字永远输不进去。
     input.addEventListener('change', () => {
       const value = input.value;
-      if (!/^\d{2}:\d{2}$/.test(value)) {
-        input.value = settings[key];
-        return;
-      }
-      if (key === 'workStart' && toSeconds(value) >= toSeconds(settings.workEnd)) {
-        input.value = settings[key];
-        return;
-      }
-      if (key === 'workEnd' && toSeconds(value) <= toSeconds(settings.workStart)) {
-        input.value = settings[key];
-        return;
-      }
+      if (!/^\d{2}:\d{2}$/.test(value)) return;
+      if (!orderIsValid(value)) return;
+      if (value === settings[key]) return;
       commit({ [key]: value }, { refresh: true });
+    });
+
+    // 离开输入框时再做最终校验，非法值才恢复原值。
+    input.addEventListener('blur', () => {
+      const value = input.value;
+      if (!/^\d{2}:\d{2}$/.test(value) || !orderIsValid(value)) {
+        input.value = settings[key];
+        return;
+      }
+      if (value !== settings[key]) {
+        commit({ [key]: value }, { refresh: true });
+      }
     });
   }
 
@@ -347,7 +371,7 @@
     pendingRefresh = false;
     try {
       settings = await window.salary.resetSettings();
-      fillFormValues();
+      fillFormValues(true);
       updatePinButton();
       computed = Calc.compute(new Date(), settings);
       render();

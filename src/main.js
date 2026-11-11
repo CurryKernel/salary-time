@@ -23,9 +23,22 @@ let moveTimer = null;
 let appliedLoginItem = null;
 let hideNoticeShown = false;
 
-app.setAppUserModelId('com.currykernel.salarytime');
+const debugLogPath = process.env.SALARY_DEBUG_LOG || '';
+function debugLog(message) {
+  if (!debugLogPath) return;
+  try {
+    fs.appendFileSync(debugLogPath, new Date().toISOString() + ' ' + message + '\n');
+  } catch (error) { /* ignore */ }
+}
 
-if (!app.requestSingleInstanceLock()) {
+app.setAppUserModelId('com.currykernel.salarytime');
+debugLog('main loaded');
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock();
+debugLog('single instance lock: ' + hasSingleInstanceLock);
+
+if (!hasSingleInstanceLock) {
+  debugLog('quitting: no single instance lock');
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -36,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    debugLog('app ready');
     settings = readSettings();
     registerIpc();
     createWindow();
@@ -43,12 +57,18 @@ if (!app.requestSingleInstanceLock()) {
     applySystemSettings();
     if (isMac && app.dock) app.dock.hide();
     maybeCapture();
+    debugLog('startup complete');
   });
 }
 
 app.on('before-quit', () => {
+  debugLog('before-quit');
   isQuitting = true;
   persistSettings();
+});
+
+app.on('will-quit', () => {
+  debugLog('will-quit');
 });
 
 app.on('window-all-closed', () => {
@@ -215,6 +235,7 @@ function createWindow() {
   mainWindow.loadFile(path.join(__dirname, 'renderer/index.html'));
 
   mainWindow.once('ready-to-show', () => {
+    debugLog('ready-to-show');
     mainWindow.show();
     if (settings.alwaysOnTop) mainWindow.setAlwaysOnTop(true, 'floating');
   });
