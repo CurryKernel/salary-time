@@ -538,6 +538,48 @@ body {
   margin-left: auto;
 }
 
+.input-box.mini {
+  width: 84px;
+  height: 28px;
+}
+
+.deduction-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.deduction-row .switch-row.compact {
+  flex: 1;
+  min-height: 28px;
+  padding: 0;
+}
+
+.mode-select {
+  height: 28px;
+  padding: 0 4px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  background: rgba(0, 0, 0, 0.28);
+  color: #cbd5e1;
+  font-family: var(--font);
+  font-size: 9.5px;
+  outline: none;
+  cursor: pointer;
+}
+
+.mode-select:focus {
+  border-color: rgba(52, 211, 153, 0.55);
+}
+
+.readonly-value {
+  font-size: 11px;
+  font-weight: 600;
+  color: #6ee7b7;
+  font-variant-numeric: tabular-nums;
+}
+
 .field-row {
   display: flex;
   align-items: center;

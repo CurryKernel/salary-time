@@ -77,14 +77,14 @@
           <div class="card-sub" id="monthSub">预计 ¥0.00</div>
           <div class="mini-progress"><div class="mini-fill" id="monthBar"></div></div>
         </article>
-        <article class="card">
+        <article class="card" id="netCard">
           <div class="card-head">
-            <span class="card-label">本周累计</span>
-            <span class="card-tag" id="weekTag">-</span>
+            <span class="card-label">本月到手</span>
+            <span class="card-tag" id="netTag">11月</span>
           </div>
-          <div class="card-value" id="weekAmount">¥0.00</div>
-          <div class="card-sub" id="weekSub">预计 ¥0.00</div>
-          <div class="mini-progress"><div class="mini-fill" id="weekBar"></div></div>
+          <div class="card-value" id="netAmount">¥0.00</div>
+          <div class="card-sub" id="netSub">税前 ¥0.00</div>
+          <div class="mini-progress"><div class="mini-fill" id="netBar"></div></div>
         </article>
       </section>
 
@@ -120,34 +120,79 @@
         </section>
 
         <section class="group">
-          <h3>加班折算方式</h3>
-          <label class="switch-row">
-            <span class="switch-copy">
-              <span class="switch-title">按当月实际工作日折算加班</span>
-              <span class="switch-hint">仅影响月末周六 / 周末加班费</span>
-            </span>
-            <input type="checkbox" class="switch" id="useActualWorkdays">
-          </label>
-
-          <div class="field-row" id="standardWorkdaysRow">
-            <span class="field-label">加班计薪天数</span>
+          <h3>五险一金</h3>
+          <div class="field-row">
+            <span class="field-label">缴费基数 <em>留空 = 基础工资</em></span>
             <span class="input-box compact">
-              <input id="standardWorkdays" type="number" min="1" max="31" step="0.25" inputmode="decimal" autocomplete="off">
-              <span class="suffix">天</span>
+              <span class="prefix">¥</span>
+              <input id="insuranceBase" type="number" min="0" step="100" inputmode="decimal" placeholder="基础工资" autocomplete="off">
             </span>
           </div>
 
-          <div id="actualWorkdaysBox" hidden>
-            <div class="field-row">
-              <span class="field-label">当月工作日 <em id="autoWorkdaysHint"></em></span>
-              <span class="input-box compact">
-                <input id="actualWorkdaysOverride" type="number" min="0" max="31" step="1" inputmode="numeric"
-                       placeholder="自动" autocomplete="off">
-                <span class="suffix">天</span>
-              </span>
-            </div>
-            <p class="hint">留空 = 自动统计当月周一至周五；遇到法定节假日 / 调休时，可手动填写。该天数只影响加班费折算。</p>
+          <div class="deduction-row">
+            <label class="switch-row compact">
+              <span class="switch-copy"><span class="switch-title">五险</span></span>
+              <input type="checkbox" class="switch" id="socialEnabled">
+            </label>
+            <select class="mode-select" id="socialMode">
+              <option value="ratio">比例</option>
+              <option value="fixed">固定</option>
+            </select>
+            <span class="input-box mini">
+              <input id="socialValue" type="number" min="0" step="0.1" inputmode="decimal" autocomplete="off">
+              <span class="suffix" id="socialUnit">%</span>
+            </span>
           </div>
+
+          <div class="deduction-row">
+            <label class="switch-row compact">
+              <span class="switch-copy"><span class="switch-title">公积金</span></span>
+              <input type="checkbox" class="switch" id="housingFundEnabled">
+            </label>
+            <select class="mode-select" id="housingFundMode">
+              <option value="ratio">比例</option>
+              <option value="fixed">固定</option>
+            </select>
+            <span class="input-box mini">
+              <input id="housingFundValue" type="number" min="0" step="0.1" inputmode="decimal" autocomplete="off">
+              <span class="suffix" id="housingFundUnit">%</span>
+            </span>
+          </div>
+
+          <div class="field-row">
+            <span class="field-label">五险一金合计</span>
+            <b class="readonly-value" id="insurancePreview">¥0.00</b>
+          </div>
+          <p class="hint">基数默认基础工资；五险 10.5%、公积金 5%，仅计算个人缴纳部分。可切换为固定金额，请按实际账单调整。</p>
+        </section>
+
+        <section class="group">
+          <h3>个税</h3>
+          <div class="grid2">
+            <label class="field">
+              <span class="field-label">个税税率</span>
+              <span class="input-box">
+                <input id="taxRate" type="number" min="0" max="100" step="0.1" inputmode="decimal" autocomplete="off">
+                <span class="suffix">%</span>
+              </span>
+            </label>
+            <label class="field">
+              <span class="field-label">每月减免额度</span>
+              <span class="input-box">
+                <span class="prefix">¥</span>
+                <input id="taxReduction" type="number" min="0" step="100" inputmode="decimal" autocomplete="off">
+              </span>
+            </label>
+          </div>
+          <div class="field-row">
+            <span class="field-label">每月减除费用</span>
+            <span class="readonly-value">¥5,000.00</span>
+          </div>
+          <div class="field-row">
+            <span class="field-label">本月个税</span>
+            <b class="readonly-value" id="taxPreview">¥0.00</b>
+          </div>
+          <p class="hint">简化估算：个税 = max(0, 税前 − 五险一金 − 5,000 − 减免额度) × 税率。减免额度用于专项附加扣除等。</p>
         </section>
 
         <section class="group">
@@ -192,7 +237,30 @@
           </div>
           <ul class="overtime-list" id="overtimeList"></ul>
           <p class="hint overtime-error" id="overtimeError" hidden></p>
-          <p class="hint">加班时薪 = 基础工资 ÷ 计薪天数 × 2 ÷ 8；当天费用 = 时薪 × 实际工作小时。固定休息 12:00–13:30、18:00–18:30 不计薪，加班时长可不足 8 小时。</p>
+
+          <div class="field-row">
+            <span class="field-label">固定休息时段（手动加班日）</span>
+          </div>
+          <div class="grid2">
+            <label class="field">
+              <span class="field-label">休息 1 开始</span>
+              <span class="input-box"><input id="overtimeRest1Start" type="time" step="60"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">休息 1 结束</span>
+              <span class="input-box"><input id="overtimeRest1End" type="time" step="60"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">休息 2 开始</span>
+              <span class="input-box"><input id="overtimeRest2Start" type="time" step="60"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">休息 2 结束</span>
+              <span class="input-box"><input id="overtimeRest2End" type="time" step="60"></span>
+            </label>
+          </div>
+          <p class="hint">仅对上方添加的加班日生效，与加班时段重叠的部分不计薪；两段休息重叠时会自动合并。</p>
+          <p class="hint">加班固定按 21.75 天折算：时薪 = 基础工资 ÷ 21.75 × 2 ÷ 8；当天费用 = 时薪 × 实际工作小时，加班时长可不足 8 小时。</p>
         </section>
 
         <section class="group">
@@ -212,7 +280,10 @@
           <div class="preview-row"><span id="previewDailyLabel">工作日日薪</span><b id="previewDaily">¥0.00</b></div>
           <div class="preview-row"><span>月末周六 ×2</span><b id="previewSaturday">¥0.00</b></div>
           <div class="preview-row"><span id="previewOvertimeLabel">周末加班</span><b id="previewOvertime">¥0.00</b></div>
-          <div class="preview-row"><span>本月预计</span><b id="previewMonth">¥0.00</b></div>
+          <div class="preview-row"><span>本月税前预计</span><b id="previewMonth">¥0.00</b></div>
+          <div class="preview-row"><span>五险一金（个人）</span><b id="previewInsurance">¥0.00</b></div>
+          <div class="preview-row"><span>本月个税</span><b id="previewTax">¥0.00</b></div>
+          <div class="preview-row"><span>本月到手预计</span><b id="previewNet">¥0.00</b></div>
           <p class="preview-note" id="previewNote"></p>
         </section>
       </div>

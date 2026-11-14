@@ -50,19 +50,10 @@ test('普通周末不计薪', () => {
   assert.equal(calc.dayType(sunday, s), 'rest');
 });
 
-test('实际工作日模式：正常日薪仍按固定月薪摊算，加班折算天数不同', () => {
-  const s = settings({ useActualWorkdays: true });
-  const wednesday = new Date(2026, 10, 11);
-  assert.equal(calc.effectiveWorkdays(s, 2026, 10), 21);
-  near(calc.dayAmountForDate(wednesday, s), normalDaily(20000, 5000, 21));
-  near(calc.dayAmountForDate(new Date(2026, 10, 28), s), saturdayDaily(20000, 21));
-});
-
-test('手动覆盖当月工作日只影响加班折算，不影响固定月薪', () => {
-  const s = settings({ useActualWorkdays: true, actualWorkdaysOverride: 22 });
-  assert.equal(calc.effectiveWorkdays(s, 2026, 10), 22);
-  near(calc.dayAmountForDate(new Date(2026, 10, 11), s), normalDaily(20000, 5000, 21));
-  near(calc.dayAmountForDate(new Date(2026, 10, 28), s), saturdayDaily(20000, 22));
+test('旧的实际工作日设置不再影响加班折算，固定按 21.75', () => {
+  const legacy = settings({ useActualWorkdays: true, actualWorkdaysOverride: 22 });
+  near(calc.dayAmountForDate(new Date(2026, 10, 28), legacy), saturdayDaily(20000, 21.75));
+  near(calc.dayAmountForDate(new Date(2026, 10, 28), settings()), saturdayDaily(20000, 21.75));
 });
 
 test('工时进度：9:00-18:00，午休 12:00-13:00，共 8 小时', () => {
@@ -136,10 +127,10 @@ test('月末正常工作结束后，本月累计正好等于本月预计', () =>
   near(result.monthPercent, 1);
 });
 
-test('实际工作日模式下本月预计 = 月薪 + 月末周六双倍基础', () => {
+test('旧设置下的本月预计仍按 21.75 折算月末周六', () => {
   const s = settings({ useActualWorkdays: true });
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  near(result.monthProjected, 25000 + saturdayDaily(20000, 21));
+  near(result.monthProjected, 25000 + saturdayDaily(20000, 21.75));
 });
 
 test('月末周六：全天按时段累计，日薪按双倍基础工资', () => {
@@ -223,14 +214,13 @@ test('周末加班当天费用 = 时薪 × 实际工时', () => {
   near(result.hourlyRate, hourly);
 });
 
-test('实际工作日模式下周末加班同样按时薪与实际工时计费', () => {
+test('周末加班固定按 21.75 折算时薪', () => {
   const s = settings({
-    useActualWorkdays: true,
     overtimeDays: [{ date: '2026-11-22', workStart: '09:00', workEnd: '18:00' }]
   });
   const period = calc.workPeriod(s, new Date(2026, 10, 22));
   near(period.totalSeconds, 7.5 * 3600); // 9 小时 - 1.5 小时午休
-  near(calc.dayAmountForDate(new Date(2026, 10, 22), s), overtimeHourly(20000, 21) * 7.5);
+  near(calc.dayAmountForDate(new Date(2026, 10, 22), s), overtimeHourly(20000, 21.75) * 7.5);
 });
 
 test('本月预计包含手动添加的周末加班（按实际工时）', () => {
@@ -262,4 +252,140 @@ test('旧数据缺少加班起止时间时退回全局上下班时间', () => {
   const entry = calc.overtimeEntryForDate(new Date(2026, 10, 21), s);
   assert.equal(entry.workStart, '09:00');
   assert.equal(entry.workEnd, '18:00');
+});
+
+test('五险一金：基数默认基础工资，五险 10.5% + 公积金 5%', () => {
+  const s = settings();
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.insuranceBase, 20000);
+  near(result.socialAmount, 2100);
+  near(result.housingFundAmount, 1000);
+  near(result.insuranceTotal, 3100);
+});
+
+test('五险一金：自定义缴费基数与固定金额', () => {
+  const s = settings({
+    insurance: {
+      base: 10000,
+      social: { enabled: true, mode: 'ratio', ratio: 10.5, amount: 0 },
+      housingFund: { enabled: true, mode: 'fixed', ratio: 5, amount: 800 }
+    }
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.insuranceBase, 10000);
+  near(result.socialAmount, 1050);
+  near(result.housingFundAmount, 800);
+  near(result.insuranceTotal, 1850);
+});
+
+test('五险一金：关闭项目后不扣款', () => {
+  const s = settings({
+    insurance: {
+      base: null,
+      social: { enabled: false, mode: 'ratio', ratio: 10.5, amount: 0 },
+      housingFund: { enabled: true, mode: 'ratio', ratio: 5, amount: 0 }
+    }
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.socialAmount, 0);
+  near(result.housingFundAmount, 1000);
+  near(result.insuranceTotal, 1000);
+});
+
+test('个税：手动税率与减除费用', () => {
+  const s = settings();
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.taxRate, 10);
+  near(result.taxReduction, 0);
+  // 本月税前包含基础、绩效与月末周六双倍：25,000 + 1,839.08
+  near(result.monthProjected, 25000 + saturdayDaily(20000, 21.75));
+  near(result.taxBase, 18739.08);
+  near(result.taxAmount, 1873.91);
+  near(result.netMonthly, 21865.17);
+});
+
+test('个税：每月减免额度增加后个税减少', () => {
+  const s = settings({ tax: { rate: 10, monthlyReduction: 2000 } });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.taxBase, 16739.08);
+  near(result.taxAmount, 1673.91);
+  near(result.netMonthly, 22065.17);
+});
+
+test('本月到手：加班费计入税前与个税', () => {
+  const s = settings({ overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00' }] });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.monthProjected,
+    25000 + saturdayDaily(20000, 21.75) + overtimeHourly(20000, 21.75) * 3.5);
+  near(result.taxBase, 19543.68);
+  near(result.taxAmount, 1954.37);
+  near(result.netMonthly, 22589.31);
+});
+
+test('扣除超过税前收入时，个税与到手均为 0', () => {
+  const s = settings({
+    insurance: {
+      base: null,
+      social: { enabled: true, mode: 'fixed', ratio: 10.5, amount: 1000000 },
+      housingFund: { enabled: true, mode: 'ratio', ratio: 5, amount: 0 }
+    }
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.taxBase, 0);
+  near(result.taxAmount, 0);
+  near(result.netMonthly, 0);
+});
+
+test('旧配置缺少五险一金与个税时使用默认值', () => {
+  const s = calc.normalizeSettings({ baseSalary: 20000, bonusSalary: 5000 });
+  assert.equal(s.insurance.base, null);
+  near(s.insurance.social.ratio, 10.5);
+  near(s.insurance.housingFund.ratio, 5);
+  near(s.tax.rate, 10);
+  assert.equal(s.tax.monthlyReduction, 0);
+});
+
+test('加班休息时段可配置', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '09:00', workEnd: '19:00' }],
+    overtimeRests: [
+      { start: '12:00', end: '13:00' },
+      { start: '17:00', end: '17:30' }
+    ]
+  });
+  const period = calc.workPeriod(s, new Date(2026, 10, 21));
+  near(period.restSeconds, 1.5 * 3600);
+  near(period.totalSeconds, 8.5 * 3600);
+
+  const at = (h, m) => new Date(2026, 10, 21, h, m, 0);
+  assert.equal(calc.phaseAt(at(17, 10), s), 'lunch');
+  near(calc.fractionAt(at(17, 10), s), 7 / 8.5);
+  near(calc.fractionAt(at(18, 0), s), 7.5 / 8.5);
+  near(calc.dayAmountForDate(new Date(2026, 10, 21), s), overtimeHourly(20000, 21.75) * 8.5);
+});
+
+test('加班休息时段重叠时自动合并，不重复扣减', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '09:00', workEnd: '19:00' }],
+    overtimeRests: [
+      { start: '12:00', end: '14:00' },
+      { start: '13:00', end: '15:00' }
+    ]
+  });
+  const period = calc.workPeriod(s, new Date(2026, 10, 21));
+  near(period.restSeconds, 3 * 3600);
+  near(period.totalSeconds, 7 * 3600);
+});
+
+test('加班休息时段缺失或非法时使用默认值', () => {
+  const s = calc.normalizeSettings({
+    baseSalary: 20000,
+    bonusSalary: 5000,
+    overtimeRests: [{ start: '20:00', end: '19:00' }]
+  });
+  assert.equal(s.overtimeRests.length, 2);
+  assert.equal(s.overtimeRests[0].start, '19:00');
+  assert.equal(s.overtimeRests[0].end, '20:00');
+  assert.equal(s.overtimeRests[1].start, '18:00');
+  assert.equal(s.overtimeRests[1].end, '18:30');
 });

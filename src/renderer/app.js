@@ -23,10 +23,10 @@
     monthAmount: $('monthAmount'),
     monthSub: $('monthSub'),
     monthBar: $('monthBar'),
-    weekTag: $('weekTag'),
-    weekAmount: $('weekAmount'),
-    weekSub: $('weekSub'),
-    weekBar: $('weekBar'),
+    netTag: $('netTag'),
+    netAmount: $('netAmount'),
+    netSub: $('netSub'),
+    netBar: $('netBar'),
     rateInfo: $('rateInfo'),
     modeChip: $('modeChip'),
     pinBtn: $('pinBtn'),
@@ -37,12 +37,6 @@
     resetBtn: $('resetBtn'),
     baseSalary: $('baseSalary'),
     bonusSalary: $('bonusSalary'),
-    standardWorkdays: $('standardWorkdays'),
-    useActualWorkdays: $('useActualWorkdays'),
-    actualWorkdaysBox: $('actualWorkdaysBox'),
-    actualWorkdaysOverride: $('actualWorkdaysOverride'),
-    autoWorkdaysHint: $('autoWorkdaysHint'),
-    standardWorkdaysRow: $('standardWorkdaysRow'),
     workStart: $('workStart'),
     workEnd: $('workEnd'),
     lunchStart: $('lunchStart'),
@@ -50,9 +44,26 @@
     overtimeDate: $('overtimeDate'),
     overtimeStart: $('overtimeStart'),
     overtimeEnd: $('overtimeEnd'),
+    overtimeRest1Start: $('overtimeRest1Start'),
+    overtimeRest1End: $('overtimeRest1End'),
+    overtimeRest2Start: $('overtimeRest2Start'),
+    overtimeRest2End: $('overtimeRest2End'),
     overtimeAddBtn: $('overtimeAddBtn'),
     overtimeList: $('overtimeList'),
     overtimeError: $('overtimeError'),
+    insuranceBase: $('insuranceBase'),
+    socialEnabled: $('socialEnabled'),
+    socialMode: $('socialMode'),
+    socialValue: $('socialValue'),
+    socialUnit: $('socialUnit'),
+    housingFundEnabled: $('housingFundEnabled'),
+    housingFundMode: $('housingFundMode'),
+    housingFundValue: $('housingFundValue'),
+    housingFundUnit: $('housingFundUnit'),
+    insurancePreview: $('insurancePreview'),
+    taxRate: $('taxRate'),
+    taxReduction: $('taxReduction'),
+    taxPreview: $('taxPreview'),
     alwaysOnTop: $('alwaysOnTop'),
     openAtLogin: $('openAtLogin'),
     openAtLoginRow: $('openAtLoginRow'),
@@ -63,6 +74,9 @@
     previewOvertimeLabel: $('previewOvertimeLabel'),
     previewOvertime: $('previewOvertime'),
     previewMonth: $('previewMonth'),
+    previewInsurance: $('previewInsurance'),
+    previewTax: $('previewTax'),
+    previewNet: $('previewNet'),
     previewNote: $('previewNote')
   };
 
@@ -158,16 +172,18 @@
     setText(ui.monthSub, '预计 ¥' + formatMoney(c.monthProjected));
     ui.monthBar.style.width = (c.monthPercent * 100).toFixed(2) + '%';
 
-    setText(ui.weekTag, c.weekRangeLabel);
-    setText(ui.weekAmount, '¥' + formatMoney(c.weekly));
-    setText(ui.weekSub, '预计 ¥' + formatMoney(c.weekProjected));
-    ui.weekBar.style.width = (c.weekPercent * 100).toFixed(2) + '%';
+    setText(ui.netTag, c.monthLabel);
+    setText(ui.netAmount, '¥' + formatMoney(c.netMonthly));
+    setText(ui.netSub, '税前 ¥' + formatMoney(c.monthProjected));
+    ui.netBar.style.width = (c.monthPercent * 100).toFixed(2) + '%';
+    if (ui.netAmount) {
+      ui.netAmount.title = '五险一金 ¥' + formatMoney(c.insuranceTotal) +
+        ' · 个税 ¥' + formatMoney(c.taxAmount);
+    }
 
     setText(ui.rateInfo, rateText(c));
-    setText(ui.modeChip, settings.useActualWorkdays
-      ? '加班 实际 ' + trimNumber(c.effectiveWorkdays) + ' 天'
-      : '加班 ' + trimNumber(settings.standardWorkdays) + ' 天');
-    if (ui.modeChip) ui.modeChip.title = '加班费按此计薪天数折算';
+    setText(ui.modeChip, '加班 21.75 天');
+    if (ui.modeChip) ui.modeChip.title = '加班费固定按 21.75 天折算';
 
     updateDerivedUI(c);
   }
@@ -222,17 +238,6 @@
   function updateDerivedUI(c) {
     if (!c) return;
     if (ui.openAtLoginRow) ui.openAtLoginRow.hidden = !packaged;
-    const active = !!settings.useActualWorkdays;
-    ui.standardWorkdaysRow.hidden = active;
-    ui.actualWorkdaysBox.hidden = !active;
-
-    const now = new Date();
-    const autoDays = Calc.countWeekdays(now.getFullYear(), now.getMonth());
-    setText(ui.autoWorkdaysHint, '（自动 ' + autoDays + ' 天）');
-    if (ui.actualWorkdaysOverride.placeholder !== '自动 ' + autoDays) {
-      ui.actualWorkdaysOverride.placeholder = '自动 ' + autoDays;
-    }
-
     setText(ui.previewFixed, '¥' + formatMoney(c.fixedMonthly));
     setText(ui.previewDailyLabel, '工作日日薪（' + c.monthlyWorkdays + ' 天）');
     setText(ui.previewDaily, '¥' + formatMoney(c.normalDailyAmount));
@@ -242,14 +247,15 @@
       : '周末加班');
     setText(ui.previewOvertime, '¥' + formatMoney(c.monthOvertime));
     setText(ui.previewMonth, '¥' + formatMoney(c.monthProjected));
+    setText(ui.previewInsurance, '¥' + formatMoney(c.insuranceTotal));
+    setText(ui.previewTax, '¥' + formatMoney(c.taxAmount));
+    setText(ui.previewNet, '¥' + formatMoney(c.netMonthly));
+    setText(ui.insurancePreview, '¥' + formatMoney(c.insuranceTotal));
+    setText(ui.taxPreview, '¥' + formatMoney(c.taxAmount));
 
-    const denom = trimNumber(c.effectiveWorkdays);
-    const modeText = active
-      ? '月末周六 / 周末加班按当月实际 ' + denom + ' 天折算'
-      : '月末周六 / 周末加班按 ' + denom + ' 天折算';
     const note = '固定月薪 = 基础 + 绩效 = ¥' + formatMoney(c.fixedMonthly) +
       '，按当月 ' + c.monthlyWorkdays + ' 个工作日摊算（日薪 ¥' + formatMoney(c.normalDailyAmount) + '）。' +
-      modeText + '，加班费额外计入本月预计。';
+      '月末周六 / 周末加班固定按 21.75 天折算，加班费额外计入本月预计。本月到手 = 税前 − 五险一金 − 个税。';
     setText(ui.previewNote, note);
   }
 
@@ -263,18 +269,41 @@
 
     setValue(ui.baseSalary, trimNumber(settings.baseSalary));
     setValue(ui.bonusSalary, trimNumber(settings.bonusSalary));
-    setValue(ui.standardWorkdays, trimNumber(settings.standardWorkdays));
-    setValue(ui.actualWorkdaysOverride, settings.actualWorkdaysOverride > 0
-      ? String(settings.actualWorkdaysOverride)
-      : '');
     setValue(ui.workStart, settings.workStart);
     setValue(ui.workEnd, settings.workEnd);
     setValue(ui.lunchStart, settings.lunchStart);
     setValue(ui.lunchEnd, settings.lunchEnd);
 
-    ui.useActualWorkdays.checked = !!settings.useActualWorkdays;
+    const restDefaults = Defaults.DEFAULT_SETTINGS.overtimeRests;
+    const overtimeRests = Array.isArray(settings.overtimeRests) ? settings.overtimeRests : [];
+    const rest0 = Object.assign({}, restDefaults[0], overtimeRests[0]);
+    const rest1 = Object.assign({}, restDefaults[1], overtimeRests[1]);
+    setValue(ui.overtimeRest1Start, rest0.start);
+    setValue(ui.overtimeRest1End, rest0.end);
+    setValue(ui.overtimeRest2Start, rest1.start);
+    setValue(ui.overtimeRest2End, rest1.end);
+
     ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     ui.openAtLogin.checked = !!settings.openAtLogin;
+
+    const insurance = settings.insurance || {};
+    const social = insurance.social || {};
+    const housingFund = insurance.housingFund || {};
+    setValue(ui.insuranceBase, insurance.base == null ? '' : trimNumber(insurance.base));
+    ui.socialEnabled.checked = social.enabled !== false;
+    ui.socialMode.value = social.mode === 'fixed' ? 'fixed' : 'ratio';
+    setValue(ui.socialValue, trimNumber(social.mode === 'fixed' ? social.amount : social.ratio));
+    setText(ui.socialUnit, social.mode === 'fixed' ? '元' : '%');
+    ui.housingFundEnabled.checked = housingFund.enabled !== false;
+    ui.housingFundMode.value = housingFund.mode === 'fixed' ? 'fixed' : 'ratio';
+    setValue(ui.housingFundValue, trimNumber(housingFund.mode === 'fixed'
+      ? housingFund.amount
+      : housingFund.ratio));
+    setText(ui.housingFundUnit, housingFund.mode === 'fixed' ? '元' : '%');
+
+    const tax = settings.tax || {};
+    setValue(ui.taxRate, trimNumber(tax.rate));
+    setValue(ui.taxReduction, trimNumber(tax.monthlyReduction));
 
     renderOvertimeList();
   }
@@ -296,15 +325,12 @@
 
     bindNumber('baseSalary', 'baseSalary', { min: 0, max: 1e9, integer: false });
     bindNumber('bonusSalary', 'bonusSalary', { min: 0, max: 1e9, integer: false });
-    bindNumber('standardWorkdays', 'standardWorkdays', { min: 0.5, max: 31, integer: false });
-    bindNumber('actualWorkdaysOverride', 'actualWorkdaysOverride', { min: 0, max: 31, integer: true, emptyIsZero: true });
 
     bindTime('workStart', 'workStart');
     bindTime('workEnd', 'workEnd');
     bindTime('lunchStart', 'lunchStart');
     bindTime('lunchEnd', 'lunchEnd');
 
-    bindCheckbox('useActualWorkdays', 'useActualWorkdays');
     bindCheckbox('alwaysOnTop', 'alwaysOnTop');
     bindCheckbox('openAtLogin', 'openAtLogin');
 
@@ -313,6 +339,9 @@
     [ui.overtimeDate, ui.overtimeStart, ui.overtimeEnd].forEach((input) => {
       input.addEventListener('input', clearOvertimeError);
     });
+
+    bindOvertimeRests();
+    bindDeductions();
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && view === 'settings') closeSettings();
@@ -507,6 +536,160 @@
     if (!ui.overtimeError) return;
     ui.overtimeError.hidden = true;
     ui.overtimeError.textContent = '';
+  }
+
+  /* --------------------------- 加班休息时段 --------------------------- */
+
+  function currentOvertimeRests() {
+    const defaults = Defaults.DEFAULT_SETTINGS.overtimeRests;
+    const rests = Array.isArray(settings.overtimeRests) ? settings.overtimeRests : [];
+    return defaults.map((fallback, index) => Object.assign({}, fallback, rests[index]));
+  }
+
+  function bindOvertimeRests() {
+    const fields = [
+      { input: ui.overtimeRest1Start, index: 0, key: 'start' },
+      { input: ui.overtimeRest1End, index: 0, key: 'end' },
+      { input: ui.overtimeRest2Start, index: 1, key: 'start' },
+      { input: ui.overtimeRest2End, index: 1, key: 'end' }
+    ];
+
+    const isValid = (index, key, value, rests) => {
+      if (!/^\d{2}:\d{2}$/.test(value)) return false;
+      const rest = rests[index];
+      return key === 'start'
+        ? toSeconds(value) <= toSeconds(rest.end)
+        : toSeconds(value) >= toSeconds(rest.start);
+    };
+
+    const commitRest = (index, key, value) => {
+      const rests = currentOvertimeRests();
+      rests[index] = Object.assign({}, rests[index], { [key]: value });
+      commit({ overtimeRests: rests }, { refresh: true });
+    };
+
+    fields.forEach(({ input, index, key }) => {
+      input.addEventListener('change', () => {
+        const value = input.value;
+        if (!isValid(index, key, value, currentOvertimeRests())) return;
+        commitRest(index, key, value);
+      });
+      input.addEventListener('blur', () => {
+        const rests = currentOvertimeRests();
+        const value = input.value;
+        if (!isValid(index, key, value, rests)) {
+          input.value = rests[index][key];
+          return;
+        }
+        if (value !== rests[index][key]) commitRest(index, key, value);
+      });
+    });
+  }
+
+  /* --------------------------- 五险一金 / 个税 --------------------------- */
+
+  function commitInsurance(key, value) {
+    commit({ insurance: Object.assign({}, settings.insurance, { [key]: value }) }, { refresh: true });
+  }
+
+  function bindDeductions() {
+    ui.insuranceBase.addEventListener('input', () => {
+      const raw = ui.insuranceBase.value.trim();
+      if (raw === '') {
+        commitInsurance('base', null);
+        return;
+      }
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) return;
+      commitInsurance('base', Math.min(1e9, value));
+    });
+    ui.insuranceBase.addEventListener('blur', () => {
+      const raw = ui.insuranceBase.value.trim();
+      if (raw === '') {
+        ui.insuranceBase.value = '';
+        commitInsurance('base', null);
+        return;
+      }
+      const value = Math.min(1e9, Math.max(0, Number(raw) || 0));
+      ui.insuranceBase.value = trimNumber(value);
+      commitInsurance('base', value);
+    });
+
+    bindInsuranceItem('social', ui.socialEnabled, ui.socialMode, ui.socialValue, ui.socialUnit);
+    bindInsuranceItem('housingFund', ui.housingFundEnabled, ui.housingFundMode,
+      ui.housingFundValue, ui.housingFundUnit);
+
+    ui.taxRate.addEventListener('input', () => {
+      const value = Number(ui.taxRate.value);
+      if (!Number.isFinite(value) || value < 0 || value > 100) return;
+      commit({ tax: Object.assign({}, settings.tax, { rate: value }) }, { refresh: true });
+    });
+    ui.taxRate.addEventListener('blur', () => {
+      const value = Math.min(100, Math.max(0, Number(ui.taxRate.value) || 0));
+      ui.taxRate.value = trimNumber(value);
+      commit({ tax: Object.assign({}, settings.tax, { rate: value }) }, { refresh: true });
+    });
+
+    ui.taxReduction.addEventListener('input', () => {
+      const value = Number(ui.taxReduction.value);
+      if (!Number.isFinite(value) || value < 0) return;
+      commit({ tax: Object.assign({}, settings.tax, { monthlyReduction: Math.min(1e9, value) }) },
+        { refresh: true });
+    });
+    ui.taxReduction.addEventListener('blur', () => {
+      const value = Math.min(1e9, Math.max(0, Number(ui.taxReduction.value) || 0));
+      ui.taxReduction.value = trimNumber(value);
+      commit({ tax: Object.assign({}, settings.tax, { monthlyReduction: value }) }, { refresh: true });
+    });
+  }
+
+  function bindInsuranceItem(key, enabledInput, modeInput, valueInput, unitLabel) {
+    const current = () => (settings.insurance && settings.insurance[key]) || {};
+    const patch = (changes) => {
+      const next = Object.assign({}, current(), changes);
+      commit({ insurance: Object.assign({}, settings.insurance, { [key]: next }) }, { refresh: true });
+    };
+
+    enabledInput.addEventListener('change', () => {
+      patch({ enabled: enabledInput.checked });
+    });
+
+    modeInput.addEventListener('change', () => {
+      const mode = modeInput.value === 'fixed' ? 'fixed' : 'ratio';
+      const item = current();
+      const nextValue = mode === 'fixed' ? (item.amount || 0) : Math.min(100, item.ratio || 0);
+      valueInput.value = trimNumber(nextValue);
+      setText(unitLabel, mode === 'fixed' ? '元' : '%');
+      patch({ mode });
+    });
+
+    valueInput.addEventListener('input', () => {
+      const raw = valueInput.value.trim();
+      if (raw === '') return;
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric) || numeric < 0) return;
+      const item = current();
+      if (item.mode === 'fixed') {
+        patch({ amount: Math.min(1e9, numeric) });
+      } else {
+        patch({ ratio: Math.min(100, numeric) });
+      }
+    });
+
+    valueInput.addEventListener('blur', () => {
+      const item = current();
+      let numeric = Number(valueInput.value);
+      if (!Number.isFinite(numeric) || numeric < 0) numeric = 0;
+      if (item.mode === 'fixed') {
+        numeric = Math.min(1e9, numeric);
+        valueInput.value = trimNumber(numeric);
+        patch({ amount: numeric });
+      } else {
+        numeric = Math.min(100, numeric);
+        valueInput.value = trimNumber(numeric);
+        patch({ ratio: numeric });
+      }
+    });
   }
 
   async function quitApp() {

@@ -9,12 +9,13 @@
 
   const BASE = Defaults.DEFAULT_SETTINGS;
   const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
-  // 加班日固定休息时段（不计薪）
-  const OVERTIME_REST_WINDOWS = [
-    [12 * 3600, 13 * 3600 + 30 * 60],
-    [18 * 3600, 18 * 3600 + 30 * 60]
+  // 手动加班日默认休息时段（可在设置中修改）
+  const DEFAULT_OVERTIME_RESTS = [
+    { start: '12:00', end: '13:30' },
+    { start: '18:00', end: '18:30' }
   ];
-  // 加班时薪的折算基准：与月末周六一致的 8 小时
+  // 加班时薪折算基准：固定 21.75 天、8 小时
+  const OVERTIME_WORKDAYS = 21.75;
   const OVERTIME_STANDARD_HOURS = 8;
 
   function pad2(n) {
@@ -25,9 +26,6 @@
     const s = Object.assign({}, BASE, settings || {});
     s.baseSalary = toNumber(s.baseSalary, BASE.baseSalary);
     s.bonusSalary = toNumber(s.bonusSalary, BASE.bonusSalary);
-    s.standardWorkdays = toNumber(s.standardWorkdays, BASE.standardWorkdays);
-    s.actualWorkdaysOverride = Math.max(0, Math.floor(toNumber(s.actualWorkdaysOverride, 0)));
-    s.useActualWorkdays = !!s.useActualWorkdays;
     s.alwaysOnTop = s.alwaysOnTop !== false;
     s.openAtLogin = !!s.openAtLogin;
     s.overtimeDays = normalizeOvertimeDays(
@@ -35,12 +33,72 @@
       normalizeClock(s.workStart, BASE.workStart),
       normalizeClock(s.workEnd, BASE.workEnd)
     );
+    s.overtimeRests = normalizeOvertimeRests(s.overtimeRests);
+    s.insurance = normalizeInsurance(s.insurance);
+    s.tax = normalizeTax(s.tax);
     return s;
   }
 
   function toNumber(value, fallback) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  function round2(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+  }
+
+  function normalizeInsuranceItem(item, defaultRatio) {
+    const source = item && typeof item === 'object' ? item : {};
+    return {
+      enabled: source.enabled !== false,
+      mode: source.mode === 'fixed' ? 'fixed' : 'ratio',
+      ratio: Math.min(100, Math.max(0, toNumber(source.ratio, defaultRatio))),
+      amount: Math.max(0, toNumber(source.amount, 0))
+    };
+  }
+
+  function normalizeInsurance(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    const rawBase = source.base;
+    const base = rawBase == null || rawBase === ''
+      ? null
+      : Math.max(0, toNumber(rawBase, 0));
+    return {
+      base,
+      social: normalizeInsuranceItem(source.social, 10.5),
+      housingFund: normalizeInsuranceItem(source.housingFund, 5)
+    };
+  }
+
+  function normalizeTax(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    return {
+      rate: Math.min(100, Math.max(0, toNumber(source.rate, 10))),
+      monthlyReduction: Math.max(0, toNumber(source.monthlyReduction, 0))
+    };
+  }
+
+  /** 个人五险一金月扣款：基数默认基础工资，分项四舍五入到分 */
+  function monthlyInsurance(settings) {
+    const s = normalizeSettings(settings);
+    const base = s.insurance.base == null
+      ? s.baseSalary
+      : s.insurance.base;
+    const pick = (item) => {
+      if (!item.enabled) return 0;
+      return item.mode === 'fixed'
+        ? round2(item.amount)
+        : round2(base * item.ratio / 100);
+    };
+    const social = pick(s.insurance.social);
+    const housingFund = pick(s.insurance.housingFund);
+    return {
+      base: round2(base),
+      social,
+      housingFund,
+      total: round2(social + housingFund)
+    };
   }
 
   function formatDateKey(date) {
@@ -103,6 +161,24 @@
     return days;
   }
 
+  function normalizeOvertimeRest(entry, fallback) {
+    const source = entry && typeof entry === 'object' ? entry : {};
+    let start = normalizeClock(source.start, fallback.start);
+    let end = normalizeClock(source.end, fallback.end);
+    if (parseTimeToSeconds(end) < parseTimeToSeconds(start)) {
+      const tmp = start;
+      start = end;
+      end = tmp;
+    }
+    return { start, end };
+  }
+
+  function normalizeOvertimeRests(list) {
+    const source = Array.isArray(list) ? list : [];
+    return DEFAULT_OVERTIME_RESTS.map((fallback, index) =>
+      normalizeOvertimeRest(source[index], fallback));
+  }
+
   /** 命中手动添加的周末加班记录时返回该记录 */
   function overtimeEntryForDate(date, settings) {
     if (!date) return null;
@@ -151,14 +227,6 @@
       date.getDate() === lastSaturdayOfMonth(date.getFullYear(), date.getMonth());
   }
 
-  /** 本月实际计薪工作日数：21.75 天模式 / 实际工作日模式（可手动覆盖） */
-  function effectiveWorkdays(settings, year, month) {
-    const s = normalizeSettings(settings);
-    if (!s.useActualWorkdays) return s.standardWorkdays;
-    if (s.actualWorkdaysOverride > 0) return s.actualWorkdaysOverride;
-    return countWeekdays(year, month);
-  }
-
   function parseTimeToSeconds(value) {
     const match = /^(\d{1,2}):(\d{2})$/.exec(String(value || '').trim());
     if (!match) return null;
@@ -180,7 +248,10 @@
     if (overtime) {
       start = parseTimeToSeconds(overtime.workStart);
       end = parseTimeToSeconds(overtime.workEnd);
-      restWindows = OVERTIME_REST_WINDOWS;
+      restWindows = s.overtimeRests.map((rest) => [
+        parseTimeToSeconds(rest.start),
+        parseTimeToSeconds(rest.end)
+      ]);
     } else {
       start = parseTimeToSeconds(s.workStart);
       end = parseTimeToSeconds(s.workEnd);
@@ -192,7 +263,6 @@
     if (safeEnd <= safeStart) safeEnd = Math.min(24 * 3600, safeStart + 8 * 3600);
 
     const safeWindows = [];
-    let restSeconds = 0;
     for (const window of restWindows) {
       let restStart = window[0] == null ? 12 * 3600 : window[0];
       let restEnd = window[1] == null ? 13 * 3600 : window[1];
@@ -205,13 +275,27 @@
       restEnd = Math.min(Math.max(restEnd, safeStart), safeEnd);
       if (restEnd <= restStart) continue;
       safeWindows.push([restStart, restEnd]);
-      restSeconds += restEnd - restStart;
     }
+
+    // 合并重叠的休息时段，避免重复扣减
+    safeWindows.sort((a, b) => a[0] - b[0]);
+    const mergedWindows = [];
+    for (const window of safeWindows) {
+      const last = mergedWindows[mergedWindows.length - 1];
+      if (last && window[0] <= last[1]) {
+        last[1] = Math.max(last[1], window[1]);
+      } else {
+        mergedWindows.push([window[0], window[1]]);
+      }
+    }
+
+    let restSeconds = 0;
+    for (const window of mergedWindows) restSeconds += window[1] - window[0];
 
     return {
       start: safeStart,
       end: safeEnd,
-      restWindows: safeWindows,
+      restWindows: mergedWindows,
       restSeconds,
       totalSeconds: Math.max(0, safeEnd - safeStart - restSeconds)
     };
@@ -231,18 +315,16 @@
     return days > 0 ? (s.baseSalary + s.bonusSalary) / days : 0;
   }
 
-  /** 某一天应得的全日工资（月薪按当月工作日摊算；月末周六双倍；周末加班按时薪 × 实际工时） */
+  /** 某一天应得的全日工资（月薪按当月工作日摊算；加班固定按 21.75 天折算） */
   function dayAmountForDate(date, settings) {
     const s = normalizeSettings(settings);
-    const denom = effectiveWorkdays(s, date.getFullYear(), date.getMonth());
-    if (!denom || denom <= 0) return 0;
 
     if (isEndOfMonthSaturday(date)) {
-      return (s.baseSalary / denom) * 2;
+      return (s.baseSalary / OVERTIME_WORKDAYS) * 2;
     }
     if (overtimeEntryForDate(date, s)) {
       const period = workPeriod(s, date);
-      const hourlyRate = ((s.baseSalary / denom) * 2) / OVERTIME_STANDARD_HOURS;
+      const hourlyRate = ((s.baseSalary / OVERTIME_WORKDAYS) * 2) / OVERTIME_STANDARD_HOURS;
       return hourlyRate * (period.totalSeconds / 3600);
     }
     const weekday = date.getDay();
@@ -350,8 +432,6 @@
     const todayEarned = dayAmount * fraction;
     const phase = phaseAt(date, s);
 
-    const denom = effectiveWorkdays(s, year, month);
-    const monthWorkdaysAuto = countWeekdays(year, month);
     const lastSaturdayDay = lastSaturdayOfMonth(year, month);
     const lastSaturday = new Date(year, month, lastSaturdayDay);
 
@@ -381,8 +461,13 @@
     const monthlyWorkdays = countWeekdays(year, month);
     const fixedMonthly = s.baseSalary + s.bonusSalary;
     const normalDaily = monthlyWorkdays > 0 ? fixedMonthly / monthlyWorkdays : 0;
-    const saturdayAmount = denom > 0 ? (s.baseSalary / denom) * 2 : 0;
+    const saturdayAmount = (s.baseSalary / OVERTIME_WORKDAYS) * 2;
     const hourlyRate = period.totalSeconds > 0 ? dayAmount / (period.totalSeconds / 3600) : 0;
+
+    const insurance = monthlyInsurance(s);
+    const taxBase = Math.max(0, monthProjected - insurance.total - 5000 - s.tax.monthlyReduction);
+    const taxAmount = round2(taxBase * s.tax.rate / 100);
+    const netMonthly = round2(Math.max(0, monthProjected - insurance.total - taxAmount));
 
     return {
       now: date,
@@ -403,18 +488,23 @@
       monthProjected,
       monthOvertime,
       monthOvertimeDays,
+      insuranceBase: insurance.base,
+      socialAmount: insurance.social,
+      housingFundAmount: insurance.housingFund,
+      insuranceTotal: insurance.total,
+      taxRate: s.tax.rate,
+      taxReduction: s.tax.monthlyReduction,
+      taxBase: round2(taxBase),
+      taxAmount,
+      netMonthly,
       weekProjected,
       monthPercent: monthProjected > 0 ? Math.min(1, monthly / monthProjected) : 0,
       weekPercent: weekProjected > 0 ? Math.min(1, weekly / weekProjected) : 0,
       countdownSeconds: remainingSecondsAt(date, s),
       remainingWorkSeconds: Math.max(0, period.totalSeconds * (1 - fraction)),
       totalWorkSeconds: period.totalSeconds,
-      effectiveWorkdays: denom,
-      autoWorkdays: monthWorkdaysAuto,
       monthlyWorkdays,
       fixedMonthly,
-      standardWorkdays: s.standardWorkdays,
-      useActualWorkdays: s.useActualWorkdays,
       normalDailyAmount: normalDaily,
       saturdayAmount,
       hourlyRate,
@@ -436,10 +526,11 @@
     lastSaturdayOfMonth,
     isEndOfMonthSaturday,
     normalizeOvertimeDays,
+    normalizeOvertimeRests,
     overtimeEntryForDate,
     isOvertimeDay,
     overtimeKind,
-    effectiveWorkdays,
+    monthlyInsurance,
     parseTimeToSeconds,
     workPeriod,
     dayType,
