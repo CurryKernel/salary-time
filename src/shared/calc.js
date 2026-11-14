@@ -9,6 +9,13 @@
 
   const BASE = Defaults.DEFAULT_SETTINGS;
   const WEEKDAY_NAMES = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
+  // 加班日固定休息时段（不计薪）
+  const OVERTIME_REST_WINDOWS = [
+    [12 * 3600, 13 * 3600 + 30 * 60],
+    [18 * 3600, 18 * 3600 + 30 * 60]
+  ];
+  // 加班时薪的折算基准：与月末周六一致的 8 小时
+  const OVERTIME_STANDARD_HOURS = 8;
 
   function pad2(n) {
     return String(n).padStart(2, '0');
@@ -23,12 +30,96 @@
     s.useActualWorkdays = !!s.useActualWorkdays;
     s.alwaysOnTop = s.alwaysOnTop !== false;
     s.openAtLogin = !!s.openAtLogin;
+    s.overtimeDays = normalizeOvertimeDays(
+      s.overtimeDays,
+      normalizeClock(s.workStart, BASE.workStart),
+      normalizeClock(s.workEnd, BASE.workEnd)
+    );
     return s;
   }
 
   function toNumber(value, fallback) {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
+  }
+
+  function formatDateKey(date) {
+    return date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
+  }
+
+  function parseDateKey(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || '').trim());
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const date = new Date(year, month, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) return null;
+    return date;
+  }
+
+  function normalizeClock(value, fallback) {
+    const seconds = parseTimeToSeconds(value);
+    if (seconds == null) return fallback;
+    return pad2(Math.floor(seconds / 3600)) + ':' + pad2(Math.floor((seconds % 3600) / 60));
+  }
+
+  function normalizeOvertimeEntry(entry, fallbackStart, fallbackEnd) {
+    if (!entry || typeof entry !== 'object') return null;
+    const date = parseDateKey(entry.date);
+    if (!date) return null;
+    const weekday = date.getDay();
+    if (weekday !== 0 && weekday !== 6) return null;
+
+    const startSeconds = parseTimeToSeconds(entry.workStart);
+    const endSeconds = parseTimeToSeconds(entry.workEnd);
+
+    let workStart;
+    let workEnd;
+    if (startSeconds == null && endSeconds == null) {
+      // 旧数据没有上下班时间，退回全局上下班时间
+      workStart = normalizeClock(fallbackStart, '09:00');
+      workEnd = normalizeClock(fallbackEnd, '18:00');
+      if (parseTimeToSeconds(workEnd) <= parseTimeToSeconds(workStart)) return null;
+    } else {
+      if (startSeconds == null || endSeconds == null || endSeconds <= startSeconds) return null;
+      workStart = normalizeClock(entry.workStart, fallbackStart);
+      workEnd = normalizeClock(entry.workEnd, fallbackEnd);
+    }
+    return { date: formatDateKey(date), workStart, workEnd };
+  }
+
+  function normalizeOvertimeDays(list, fallbackStart, fallbackEnd) {
+    if (!Array.isArray(list)) return [];
+    const seen = new Set();
+    const days = [];
+    for (const entry of list) {
+      const normalized = normalizeOvertimeEntry(entry, fallbackStart, fallbackEnd);
+      if (!normalized || seen.has(normalized.date)) continue;
+      seen.add(normalized.date);
+      days.push(normalized);
+    }
+    days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return days;
+  }
+
+  /** 命中手动添加的周末加班记录时返回该记录 */
+  function overtimeEntryForDate(date, settings) {
+    if (!date) return null;
+    const s = normalizeSettings(settings);
+    const key = formatDateKey(date);
+    return s.overtimeDays.find((entry) => entry.date === key) || null;
+  }
+
+  /** 是否为加班日（月末周六或手动添加的周末加班） */
+  function isOvertimeDay(date, settings) {
+    return isEndOfMonthSaturday(date) || !!overtimeEntryForDate(date, settings);
+  }
+
+  /** month-end | weekend | null */
+  function overtimeKind(date, settings) {
+    if (isEndOfMonthSaturday(date)) return 'month-end';
+    return overtimeEntryForDate(date, settings) ? 'weekend' : null;
   }
 
   function daysInMonth(year, month) {
@@ -77,49 +168,70 @@
     return hour * 3600 + minute * 60;
   }
 
-  /** 一天的工作时段（扣除午休），单位秒 */
-  function workPeriod(settings) {
+  /** 一天的工作时段（扣除休息），单位秒；加班日使用自定义上下班时间与固定休息时段 */
+  function workPeriod(settings, date) {
     const s = normalizeSettings(settings);
-    const start = parseTimeToSeconds(s.workStart);
-    let end = parseTimeToSeconds(s.workEnd);
-    let lunchStart = parseTimeToSeconds(s.lunchStart);
-    let lunchEnd = parseTimeToSeconds(s.lunchEnd);
+    const overtime = date ? overtimeEntryForDate(date, s) : null;
+
+    let start;
+    let end;
+    let restWindows;
+
+    if (overtime) {
+      start = parseTimeToSeconds(overtime.workStart);
+      end = parseTimeToSeconds(overtime.workEnd);
+      restWindows = OVERTIME_REST_WINDOWS;
+    } else {
+      start = parseTimeToSeconds(s.workStart);
+      end = parseTimeToSeconds(s.workEnd);
+      restWindows = [[parseTimeToSeconds(s.lunchStart), parseTimeToSeconds(s.lunchEnd)]];
+    }
 
     const safeStart = start == null ? 9 * 3600 : start;
     let safeEnd = end == null ? 18 * 3600 : end;
     if (safeEnd <= safeStart) safeEnd = Math.min(24 * 3600, safeStart + 8 * 3600);
-    let safeLunchStart = lunchStart == null ? 12 * 3600 : lunchStart;
-    let safeLunchEnd = lunchEnd == null ? 13 * 3600 : lunchEnd;
 
-    safeLunchStart = Math.min(Math.max(safeLunchStart, safeStart), safeEnd);
-    safeLunchEnd = Math.min(Math.max(safeLunchEnd, safeStart), safeEnd);
-    if (safeLunchEnd < safeLunchStart) {
-      const tmp = safeLunchStart;
-      safeLunchStart = safeLunchEnd;
-      safeLunchEnd = tmp;
+    const safeWindows = [];
+    let restSeconds = 0;
+    for (const window of restWindows) {
+      let restStart = window[0] == null ? 12 * 3600 : window[0];
+      let restEnd = window[1] == null ? 13 * 3600 : window[1];
+      if (restEnd < restStart) {
+        const tmp = restStart;
+        restStart = restEnd;
+        restEnd = tmp;
+      }
+      restStart = Math.min(Math.max(restStart, safeStart), safeEnd);
+      restEnd = Math.min(Math.max(restEnd, safeStart), safeEnd);
+      if (restEnd <= restStart) continue;
+      safeWindows.push([restStart, restEnd]);
+      restSeconds += restEnd - restStart;
     }
-
-    const lunch = safeLunchEnd - safeLunchStart;
-    const total = Math.max(0, safeEnd - safeStart - lunch);
 
     return {
       start: safeStart,
       end: safeEnd,
-      lunchStart: safeLunchStart,
-      lunchEnd: safeLunchEnd,
-      lunchSeconds: lunch,
-      totalSeconds: total
+      restWindows: safeWindows,
+      restSeconds,
+      totalSeconds: Math.max(0, safeEnd - safeStart - restSeconds)
     };
   }
 
   /** workday | overtime | rest */
   function dayType(date, settings) {
-    if (isEndOfMonthSaturday(date)) return 'overtime';
+    if (isOvertimeDay(date, settings)) return 'overtime';
     const weekday = date.getDay();
     return weekday >= 1 && weekday <= 5 ? 'workday' : 'rest';
   }
 
-  /** 某一天应得的全日工资（月末周六按基础工资双倍，且不含绩效） */
+  /** 固定月薪摊算的日薪：月薪 ÷ 当月周一至周五天数（与计薪方式无关） */
+  function normalDailyAmount(settings, year, month) {
+    const s = normalizeSettings(settings);
+    const days = countWeekdays(year, month);
+    return days > 0 ? (s.baseSalary + s.bonusSalary) / days : 0;
+  }
+
+  /** 某一天应得的全日工资（月薪按当月工作日摊算；月末周六双倍；周末加班按时薪 × 实际工时） */
   function dayAmountForDate(date, settings) {
     const s = normalizeSettings(settings);
     const denom = effectiveWorkdays(s, date.getFullYear(), date.getMonth());
@@ -128,9 +240,14 @@
     if (isEndOfMonthSaturday(date)) {
       return (s.baseSalary / denom) * 2;
     }
+    if (overtimeEntryForDate(date, s)) {
+      const period = workPeriod(s, date);
+      const hourlyRate = ((s.baseSalary / denom) * 2) / OVERTIME_STANDARD_HOURS;
+      return hourlyRate * (period.totalSeconds / 3600);
+    }
     const weekday = date.getDay();
     if (weekday >= 1 && weekday <= 5) {
-      return (s.baseSalary + s.bonusSalary) / denom;
+      return normalDailyAmount(s, date.getFullYear(), date.getMonth());
     }
     return 0;
   }
@@ -140,10 +257,10 @@
       date.getMilliseconds() / 1000;
   }
 
-  /** 今天的工作进度 0-1（午休期间冻结） */
+  /** 今天的工作进度 0-1（休息时段冻结） */
   function fractionAt(date, settings) {
     if (dayType(date, settings) === 'rest') return 0;
-    const period = workPeriod(settings);
+    const period = workPeriod(settings, date);
     if (period.totalSeconds <= 0) {
       return secondsOfDay(date) >= period.end ? 1 : 0;
     }
@@ -151,29 +268,33 @@
     if (now <= period.start) return 0;
     if (now >= period.end) return 1;
 
-    const elapsed = now - period.start;
-    const lunchOverlap = Math.max(0, Math.min(now, period.lunchEnd) - period.lunchStart);
-    const worked = elapsed - lunchOverlap;
+    let worked = now - period.start;
+    for (const window of period.restWindows) {
+      worked -= Math.max(0, Math.min(now, window[1]) - window[0]);
+    }
     return Math.min(1, Math.max(0, worked / period.totalSeconds));
   }
 
   /** before | working | lunch | after | rest */
   function phaseAt(date, settings) {
     if (dayType(date, settings) === 'rest') return 'rest';
-    const period = workPeriod(settings);
+    const period = workPeriod(settings, date);
     const now = secondsOfDay(date);
     if (now < period.start) return 'before';
     if (now >= period.end) return 'after';
-    if (now >= period.lunchStart && now < period.lunchEnd) return 'lunch';
+    if (period.restWindows.some((window) => now >= window[0] && now < window[1])) return 'lunch';
     return 'working';
   }
 
   function remainingSecondsAt(date, settings) {
-    const period = workPeriod(settings);
+    const period = workPeriod(settings, date);
     const now = secondsOfDay(date);
     switch (phaseAt(date, settings)) {
       case 'before': return Math.max(0, period.start - now);
-      case 'lunch': return Math.max(0, period.lunchEnd - now);
+      case 'lunch': {
+        const window = period.restWindows.find((item) => now >= item[0] && now < item[1]);
+        return window ? Math.max(0, window[1] - now) : 0;
+      }
       case 'working': return Math.max(0, period.end - now);
       default: return 0;
     }
@@ -223,7 +344,7 @@
 
     const totalDays = daysInMonth(year, month);
     const type = dayType(date, s);
-    const period = workPeriod(s);
+    const period = workPeriod(s, date);
     const fraction = fractionAt(date, s);
     const dayAmount = dayAmountForDate(date, s);
     const todayEarned = dayAmount * fraction;
@@ -234,8 +355,19 @@
     const lastSaturdayDay = lastSaturdayOfMonth(year, month);
     const lastSaturday = new Date(year, month, lastSaturdayDay);
 
-    const firstOfMonth = new Date(year, month, 1);
-    const monthProjected = sumDays(firstOfMonth, new Date(year, month, totalDays), date, s, true);
+    let monthProjected = 0;
+    let monthOvertime = 0;
+    let monthOvertimeDays = 0;
+    for (let d = 1; d <= totalDays; d++) {
+      const cursor = new Date(year, month, d);
+      const amount = dayAmountForDate(cursor, s);
+      monthProjected += amount;
+      // 手动添加的周末加班单独统计，便于在设置页展示其对本月的贡献
+      if (overtimeEntryForDate(cursor, s)) {
+        monthOvertime += amount;
+        monthOvertimeDays += 1;
+      }
+    }
     let monthly = 0;
     for (let d = 1; d <= day; d++) {
       monthly += earnedOnDate(new Date(year, month, d), date, s);
@@ -246,7 +378,9 @@
     const weekly = sumDays(monday, date, date, s, false);
     const weekProjected = sumDays(monday, sunday, date, s, true);
 
-    const normalDailyAmount = denom > 0 ? (s.baseSalary + s.bonusSalary) / denom : 0;
+    const monthlyWorkdays = countWeekdays(year, month);
+    const fixedMonthly = s.baseSalary + s.bonusSalary;
+    const normalDaily = monthlyWorkdays > 0 ? fixedMonthly / monthlyWorkdays : 0;
     const saturdayAmount = denom > 0 ? (s.baseSalary / denom) * 2 : 0;
     const hourlyRate = period.totalSeconds > 0 ? dayAmount / (period.totalSeconds / 3600) : 0;
 
@@ -267,6 +401,8 @@
       monthly,
       weekly,
       monthProjected,
+      monthOvertime,
+      monthOvertimeDays,
       weekProjected,
       monthPercent: monthProjected > 0 ? Math.min(1, monthly / monthProjected) : 0,
       weekPercent: weekProjected > 0 ? Math.min(1, weekly / weekProjected) : 0,
@@ -275,14 +411,17 @@
       totalWorkSeconds: period.totalSeconds,
       effectiveWorkdays: denom,
       autoWorkdays: monthWorkdaysAuto,
+      monthlyWorkdays,
+      fixedMonthly,
       standardWorkdays: s.standardWorkdays,
       useActualWorkdays: s.useActualWorkdays,
-      normalDailyAmount,
+      normalDailyAmount: normalDaily,
       saturdayAmount,
       hourlyRate,
       lastSaturday,
       lastSaturdayLabel: (month + 1) + '月' + lastSaturdayDay + '日',
-      isLastSaturdayToday: type === 'overtime'
+      overtimeKind: type === 'overtime' ? overtimeKind(date, s) : null,
+      isLastSaturdayToday: isEndOfMonthSaturday(date)
     };
   }
 
@@ -291,10 +430,15 @@
     WEEKDAY_NAMES,
     // 工具
     normalizeSettings,
+    formatDateKey,
     daysInMonth,
     countWeekdays,
     lastSaturdayOfMonth,
     isEndOfMonthSaturday,
+    normalizeOvertimeDays,
+    overtimeEntryForDate,
+    isOvertimeDay,
+    overtimeKind,
     effectiveWorkdays,
     parseTimeToSeconds,
     workPeriod,

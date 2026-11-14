@@ -151,10 +151,14 @@ async function main() {
   await sleep(700);
   state = await run(`({
     mode: document.getElementById('modeChip').textContent,
-    previewDaily: document.getElementById('previewDaily').textContent
+    previewDaily: document.getElementById('previewDaily').textContent,
+    previewSaturday: document.getElementById('previewSaturday').textContent
   })`);
   ok('手动覆盖当月工作日数', state.mode.includes('22'), state.mode);
-  ok('覆盖后日薪联动', state.previewDaily === '¥' + money(35000 / 22), state.previewDaily);
+  ok('覆盖后正常日薪不受影响',
+    state.previewDaily === '¥' + money(35000 / autoWorkdays), state.previewDaily);
+  ok('覆盖后加班折算联动',
+    state.previewSaturday === '¥' + money((20000 / 22) * 2), state.previewSaturday);
 
   // 完成返回主界面
   await run(`document.getElementById('doneBtn').click()`);
@@ -173,6 +177,49 @@ async function main() {
   await sleep(150);
   state = await run(`document.getElementById('settingsView').hidden`);
   ok('Esc 关闭设置页', state === true);
+
+  // 周末加班：添加与删除
+  const today = new Date();
+  const lastSaturday = calc.lastSaturdayOfMonth(today.getFullYear(), today.getMonth());
+  let overtimeDate = null;
+  for (let d = 1; d <= calc.daysInMonth(today.getFullYear(), today.getMonth()); d++) {
+    const date = new Date(today.getFullYear(), today.getMonth(), d);
+    const weekday = date.getDay();
+    if (weekday !== 0 && weekday !== 6) continue;
+    if (weekday === 6 && d === lastSaturday) continue;
+    overtimeDate = today.getFullYear() + '-' + String(today.getMonth() + 1).padStart(2, '0') +
+      '-' + String(d).padStart(2, '0');
+    break;
+  }
+
+  await run(`(() => {
+    const input = document.getElementById('overtimeDate');
+    input.value = '${overtimeDate}';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('overtimeStart').value = '10:00';
+    document.getElementById('overtimeEnd').value = '15:00';
+    document.getElementById('overtimeAddBtn').click();
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    count: document.querySelectorAll('#overtimeList .overtime-item').length,
+    text: document.getElementById('overtimeList').textContent,
+    previewOvertime: document.getElementById('previewOvertime').textContent,
+    previewLabel: document.getElementById('previewOvertimeLabel').textContent
+  })`);
+  ok('添加周末加班日', state.count === 1, state.text);
+  ok('加班金额计入本月预计预览',
+    /^¥(?!0\.00$)[\d,]+\.\d{2}$/.test(state.previewOvertime) && state.previewLabel.includes('1 天'),
+    state.previewOvertime + ' / ' + state.previewLabel);
+  ok('加班日已持久化',
+    calls.saves.some((p) => Array.isArray(p.overtimeDays) &&
+      p.overtimeDays.length === 1 && p.overtimeDays[0].date === overtimeDate &&
+      p.overtimeDays[0].workStart === '10:00' && p.overtimeDays[0].workEnd === '15:00'));
+
+  await run(`document.querySelector('#overtimeList .overtime-remove').click()`);
+  await sleep(700);
+  state = await run(`document.querySelectorAll('#overtimeList .overtime-item').length`);
+  ok('删除周末加班日', state === 0);
 
   // 时间输入：中间值不能立即回退（否则小时位无法输入第二位数字）
   await run(`(() => {
@@ -217,12 +264,15 @@ async function main() {
     base: document.getElementById('baseSalary').value,
     mode: document.getElementById('modeChip').textContent,
     actualChecked: document.getElementById('useActualWorkdays').checked,
+    previewFixed: document.getElementById('previewFixed').textContent,
     previewDaily: document.getElementById('previewDaily').textContent
   })`);
   ok('恢复默认后基础工资为 20000', state.base === '20000', state.base);
   ok('恢复默认后关闭实际工作日模式', state.actualChecked === false);
-  ok('恢复默认后按 21.75 天计薪', state.mode.includes('21.75'), state.mode);
-  ok('恢复默认后预览日薪正确', state.previewDaily === '¥' + money(25000 / 21.75), state.previewDaily);
+  ok('恢复默认后按 21.75 天折算加班', state.mode.includes('21.75'), state.mode);
+  ok('恢复默认后固定月薪正确', state.previewFixed === '¥' + money(25000), state.previewFixed);
+  ok('恢复默认后工作日日薪 = 月薪 ÷ 当月工作日',
+    state.previewDaily === '¥' + money(25000 / autoWorkdays), state.previewDaily);
 
   window.destroy();
   console.log('\nUI 冒烟测试通过：' + results.length + ' 项断言');

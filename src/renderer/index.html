@@ -120,17 +120,17 @@
         </section>
 
         <section class="group">
-          <h3>计薪方式</h3>
+          <h3>加班折算方式</h3>
           <label class="switch-row">
             <span class="switch-copy">
-              <span class="switch-title">按当月实际工作日计算</span>
-              <span class="switch-hint">统计口径更贴近当月已挣金额</span>
+              <span class="switch-title">按当月实际工作日折算加班</span>
+              <span class="switch-hint">仅影响月末周六 / 周末加班费</span>
             </span>
             <input type="checkbox" class="switch" id="useActualWorkdays">
           </label>
 
           <div class="field-row" id="standardWorkdaysRow">
-            <span class="field-label">月计薪天数</span>
+            <span class="field-label">加班计薪天数</span>
             <span class="input-box compact">
               <input id="standardWorkdays" type="number" min="1" max="31" step="0.25" inputmode="decimal" autocomplete="off">
               <span class="suffix">天</span>
@@ -146,7 +146,7 @@
                 <span class="suffix">天</span>
               </span>
             </div>
-            <p class="hint">留空 = 自动统计当月周一至周五；遇到法定节假日 / 调休时，可手动填写实际计薪天数。</p>
+            <p class="hint">留空 = 自动统计当月周一至周五；遇到法定节假日 / 调休时，可手动填写。该天数只影响加班费折算。</p>
           </div>
         </section>
 
@@ -174,6 +174,28 @@
         </section>
 
         <section class="group">
+          <h3>周末加班</h3>
+          <div class="overtime-form">
+            <label class="field field-wide">
+              <span class="field-label">加班日期（周六 / 周日）</span>
+              <span class="input-box"><input id="overtimeDate" type="date" autocomplete="off"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">加班开始</span>
+              <span class="input-box"><input id="overtimeStart" type="time" step="60" value="09:00"></span>
+            </label>
+            <label class="field">
+              <span class="field-label">加班结束</span>
+              <span class="input-box"><input id="overtimeEnd" type="time" step="60" value="18:00"></span>
+            </label>
+            <button type="button" class="btn add" id="overtimeAddBtn">添加加班日</button>
+          </div>
+          <ul class="overtime-list" id="overtimeList"></ul>
+          <p class="hint overtime-error" id="overtimeError" hidden></p>
+          <p class="hint">加班时薪 = 基础工资 ÷ 计薪天数 × 2 ÷ 8；当天费用 = 时薪 × 实际工作小时。固定休息 12:00–13:30、18:00–18:30 不计薪，加班时长可不足 8 小时。</p>
+        </section>
+
+        <section class="group">
           <h3>系统</h3>
           <label class="switch-row">
             <span class="switch-copy"><span class="switch-title">始终置顶</span></span>
@@ -186,8 +208,10 @@
         </section>
 
         <section class="preview">
-          <div class="preview-row"><span>普通工作日</span><b id="previewDaily">¥0.00</b></div>
+          <div class="preview-row"><span>固定月薪（基础 + 绩效）</span><b id="previewFixed">¥0.00</b></div>
+          <div class="preview-row"><span id="previewDailyLabel">工作日日薪</span><b id="previewDaily">¥0.00</b></div>
           <div class="preview-row"><span>月末周六 ×2</span><b id="previewSaturday">¥0.00</b></div>
+          <div class="preview-row"><span id="previewOvertimeLabel">周末加班</span><b id="previewOvertime">¥0.00</b></div>
           <div class="preview-row"><span>本月预计</span><b id="previewMonth">¥0.00</b></div>
           <p class="preview-note" id="previewNote"></p>
         </section>

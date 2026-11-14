@@ -7,6 +7,7 @@ const { DEFAULT_SETTINGS } = require('./shared/defaults.js');
 
 const WIDGET_SIZE = { width: 400, height: 322 };
 const SETTINGS_VIEW_HEIGHT = 780;
+const MAX_OVERTIME_DAYS = 120;
 const isMac = process.platform === 'darwin';
 
 // 可用于截图 / 演示时隔离配置，不影响正式使用的数据
@@ -150,6 +151,7 @@ function sanitizeSettings(input) {
     s.lunchStart = s.lunchEnd;
     s.lunchEnd = tmp;
   }
+  s.overtimeDays = sanitizeOvertimeDays(source.overtimeDays, s.workStart, s.workEnd);
 
   s.alwaysOnTop = source.alwaysOnTop !== false;
   s.openAtLogin = !!source.openAtLogin;
@@ -165,6 +167,52 @@ function sanitizeSettings(input) {
 function toSeconds(value) {
   const parts = String(value || '').split(':');
   return Number(parts[0]) * 3600 + Number(parts[1]) * 60;
+}
+
+/** 只保留合法的周末加班记录：真实存在的周六 / 周日、有效上下班时段，日期去重 */
+function sanitizeOvertimeDays(list, fallbackStart, fallbackEnd) {
+  if (!Array.isArray(list)) return [];
+  const seen = new Set();
+  const days = [];
+
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') continue;
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(entry.date || '').trim());
+    if (!match) continue;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const day = Number(match[3]);
+    const date = new Date(year, month, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) continue;
+    if (date.getDay() !== 0 && date.getDay() !== 6) continue;
+
+    const key = date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
+    if (seen.has(key)) continue;
+
+    const workStart = validTime(entry.workStart, '');
+    const workEnd = validTime(entry.workEnd, '');
+    let start = workStart;
+    let end = workEnd;
+    if (!workStart && !workEnd) {
+      // 旧数据没有上下班时间，退回全局上下班时间
+      start = fallbackStart;
+      end = fallbackEnd;
+    } else if (!workStart || !workEnd || toSeconds(workEnd) <= toSeconds(workStart)) {
+      continue;
+    }
+
+    seen.add(key);
+    days.push({ date: key, workStart: start, workEnd: end });
+    if (days.length >= MAX_OVERTIME_DAYS) break;
+  }
+
+  days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  return days;
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
 }
 
 /* ------------------------------------------------------------------ */
