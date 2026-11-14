@@ -11,11 +11,6 @@
     // 薪资
     baseSalary: 20000,
     bonusSalary: 5000,
-    // 计薪方式：默认按 21.75 天
-    useActualWorkdays: false,
-    standardWorkdays: 21.75,
-    // 实际工作日模式下，0 表示自动按当月周一至周五计算
-    actualWorkdaysOverride: 0,
     // 工作时间
     workStart: '09:00',
     workEnd: '18:00',
@@ -23,6 +18,19 @@
     lunchEnd: '13:00',
     // 手动添加的周六 / 周日加班：{ date: 'YYYY-MM-DD', workStart, workEnd }
     overtimeDays: [],
+    // 手动加班日固定休息时段（全局，可设置）
+    overtimeRests: [
+      { start: '12:00', end: '13:30' },
+      { start: '18:00', end: '18:30' }
+    ],
+    // 五险一金（个人缴纳部分）：base 为 null 时使用基础工资
+    insurance: {
+      base: null,
+      social: { enabled: true, mode: 'ratio', ratio: 10.5, amount: 0 },
+      housingFund: { enabled: true, mode: 'ratio', ratio: 5, amount: 0 }
+    },
+    // 个税：简化模型，手动税率 + 每月减免额度，减除费用固定 5000
+    tax: { rate: 10, monthlyReduction: 0 },
     // 窗口 / 系统
     alwaysOnTop: true,
     openAtLogin: false,

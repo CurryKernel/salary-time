@@ -84,47 +84,53 @@ async function main() {
     mode: document.getElementById('modeChip').textContent,
     amount: document.getElementById('todayAmount').textContent,
     monthly: document.getElementById('monthAmount').textContent,
+    netAmount: document.getElementById('netAmount').textContent,
+    netSub: document.getElementById('netSub').textContent,
+    weekRemoved: document.getElementById('weekAmount') === null,
     settingsHidden: document.getElementById('settingsView').hidden
   })`);
   ok('默认按 21.75 天计薪', state.mode.includes('21.75'), state.mode);
   ok('主界面默认可见', state.settingsHidden === true);
   ok('今日金额已渲染', /^[\d,]+\.\d{2}$/.test(state.amount), state.amount);
   ok('本月累计已渲染', /^¥[\d,]+\.\d{2}$/.test(state.monthly), state.monthly);
+  ok('本月到手已渲染', /^¥[\d,]+\.\d{2}$/.test(state.netAmount), state.netAmount);
+  ok('本周累计已移除', state.weekRemoved === true, state.netSub);
 
   // 打开设置
   await run(`document.getElementById('settingsBtn').click()`);
   await sleep(200);
   state = await run(`({
     settingsHidden: document.getElementById('settingsView').hidden,
-    mainHidden: document.getElementById('mainView').hidden
+    mainHidden: document.getElementById('mainView').hidden,
+    social: document.getElementById('socialValue').value,
+    housing: document.getElementById('housingFundValue').value,
+    taxRate: document.getElementById('taxRate').value,
+    insurancePreview: document.getElementById('insurancePreview').textContent,
+    rest1Start: document.getElementById('overtimeRest1Start').value,
+    rest1End: document.getElementById('overtimeRest1End').value,
+    rest2Start: document.getElementById('overtimeRest2Start').value,
+    rest2End: document.getElementById('overtimeRest2End').value
   })`);
   ok('点击齿轮打开设置页', state.settingsHidden === false && state.mainHidden === true);
   ok('通知主进程调整窗口高度', calls.views[calls.views.length - 1] === 'settings');
+  ok('五险默认 10.5%、公积金默认 5%', state.social === '10.5' && state.housing === '5',
+    state.social + ' / ' + state.housing);
+  ok('五险一金默认合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
+  ok('个税默认税率 10%', state.taxRate === '10', state.taxRate);
+  ok('加班休息时段默认 12:00–13:30、18:00–18:30',
+    state.rest1Start === '12:00' && state.rest1End === '13:30' &&
+    state.rest2Start === '18:00' && state.rest2End === '18:30');
 
-  // 切换实际工作日模式
-  await run(`document.getElementById('useActualWorkdays').click()`);
-  await sleep(700);
-  state = await run(`({
-    mode: document.getElementById('modeChip').textContent,
-    previewDaily: document.getElementById('previewDaily').textContent,
-    previewSaturday: document.getElementById('previewSaturday').textContent,
-    standardRowHidden: document.getElementById('standardWorkdaysRow').hidden,
-    actualBoxHidden: document.getElementById('actualWorkdaysBox').hidden,
-    placeholder: document.getElementById('actualWorkdaysOverride').placeholder,
-    hint: document.getElementById('autoWorkdaysHint').textContent
-  })`);
+  // 加班折算固定按 21.75
   const now = new Date();
   const autoWorkdays = calc.countWeekdays(now.getFullYear(), now.getMonth());
-  const expectedDaily = money((20000 + 5000) / autoWorkdays);
-  const expectedSaturday = money((20000 / autoWorkdays) * 2);
-  ok('切换到实际工作日模式', state.mode.includes('实际') && state.mode.includes(String(autoWorkdays)), state.mode);
-  ok('隐藏 21.75 天输入行', state.standardRowHidden === true);
-  ok('显示当月工作日设置', state.actualBoxHidden === false);
-  ok('自动工作日提示正确', state.hint.includes(String(autoWorkdays)), state.hint);
-  ok('工作日占位符正确', state.placeholder.includes(String(autoWorkdays)), state.placeholder);
-  ok('预览日薪按实际工作日计算', state.previewDaily === '¥' + expectedDaily, state.previewDaily);
-  ok('预览月末周六不含绩效', state.previewSaturday === '¥' + expectedSaturday, state.previewSaturday);
-  ok('设置已持久化（useActualWorkdays）', calls.saves.some((p) => p.useActualWorkdays === true));
+  state = await run(`({
+    mode: document.getElementById('modeChip').textContent,
+    previewSaturday: document.getElementById('previewSaturday').textContent
+  })`);
+  ok('加班固定按 21.75 天折算', state.mode.includes('21.75'), state.mode);
+  ok('预览月末周六按 21.75 折算',
+    state.previewSaturday === '¥' + money((20000 / 21.75) * 2), state.previewSaturday);
 
   // 修改基础工资
   await run(`(() => {
@@ -141,24 +147,6 @@ async function main() {
   ok('修改基础工资后预览联动', state.previewDaily === '¥' + expectedAfterRaise, state.previewDaily);
   ok('修改基础工资后主界面联动', /^¥[\d,]+\.\d{2}$/.test(state.monthly));
   ok('设置已持久化（baseSalary）', calls.saves.some((p) => p.baseSalary === 30000));
-
-  // 手动覆盖工作日
-  await run(`(() => {
-    const input = document.getElementById('actualWorkdaysOverride');
-    input.value = '22';
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-  })()`);
-  await sleep(700);
-  state = await run(`({
-    mode: document.getElementById('modeChip').textContent,
-    previewDaily: document.getElementById('previewDaily').textContent,
-    previewSaturday: document.getElementById('previewSaturday').textContent
-  })`);
-  ok('手动覆盖当月工作日数', state.mode.includes('22'), state.mode);
-  ok('覆盖后正常日薪不受影响',
-    state.previewDaily === '¥' + money(35000 / autoWorkdays), state.previewDaily);
-  ok('覆盖后加班折算联动',
-    state.previewSaturday === '¥' + money((20000 / 22) * 2), state.previewSaturday);
 
   // 完成返回主界面
   await run(`document.getElementById('doneBtn').click()`);
@@ -263,16 +251,18 @@ async function main() {
   state = await run(`({
     base: document.getElementById('baseSalary').value,
     mode: document.getElementById('modeChip').textContent,
-    actualChecked: document.getElementById('useActualWorkdays').checked,
     previewFixed: document.getElementById('previewFixed').textContent,
-    previewDaily: document.getElementById('previewDaily').textContent
+    previewDaily: document.getElementById('previewDaily').textContent,
+    taxRate: document.getElementById('taxRate').value,
+    insurancePreview: document.getElementById('insurancePreview').textContent
   })`);
   ok('恢复默认后基础工资为 20000', state.base === '20000', state.base);
-  ok('恢复默认后关闭实际工作日模式', state.actualChecked === false);
   ok('恢复默认后按 21.75 天折算加班', state.mode.includes('21.75'), state.mode);
   ok('恢复默认后固定月薪正确', state.previewFixed === '¥' + money(25000), state.previewFixed);
   ok('恢复默认后工作日日薪 = 月薪 ÷ 当月工作日',
     state.previewDaily === '¥' + money(25000 / autoWorkdays), state.previewDaily);
+  ok('恢复默认后个税税率 10%', state.taxRate === '10', state.taxRate);
+  ok('恢复默认后五险一金合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
 
   window.destroy();
   console.log('\nUI 冒烟测试通过：' + results.length + ' 项断言');

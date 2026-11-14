@@ -8,6 +8,10 @@ const { DEFAULT_SETTINGS } = require('./shared/defaults.js');
 const WIDGET_SIZE = { width: 400, height: 322 };
 const SETTINGS_VIEW_HEIGHT = 780;
 const MAX_OVERTIME_DAYS = 120;
+const OVERTIME_REST_DEFAULTS = [
+  { start: '12:00', end: '13:30' },
+  { start: '18:00', end: '18:30' }
+];
 const isMac = process.platform === 'darwin';
 
 // 可用于截图 / 演示时隔离配置，不影响正式使用的数据
@@ -133,9 +137,6 @@ function sanitizeSettings(input) {
 
   s.baseSalary = clamp(source.baseSalary, 0, 1e9, DEFAULT_SETTINGS.baseSalary);
   s.bonusSalary = clamp(source.bonusSalary, 0, 1e9, DEFAULT_SETTINGS.bonusSalary);
-  s.standardWorkdays = clamp(source.standardWorkdays, 0.5, 31, DEFAULT_SETTINGS.standardWorkdays);
-  s.useActualWorkdays = !!source.useActualWorkdays;
-  s.actualWorkdaysOverride = Math.max(0, Math.min(31, Math.floor(toNumber(source.actualWorkdaysOverride, 0))));
 
   s.workStart = validTime(source.workStart, DEFAULT_SETTINGS.workStart);
   s.workEnd = validTime(source.workEnd, DEFAULT_SETTINGS.workEnd);
@@ -152,6 +153,9 @@ function sanitizeSettings(input) {
     s.lunchEnd = tmp;
   }
   s.overtimeDays = sanitizeOvertimeDays(source.overtimeDays, s.workStart, s.workEnd);
+  s.overtimeRests = sanitizeOvertimeRests(source.overtimeRests);
+  s.insurance = sanitizeInsurance(source.insurance);
+  s.tax = sanitizeTax(source.tax);
 
   s.alwaysOnTop = source.alwaysOnTop !== false;
   s.openAtLogin = !!source.openAtLogin;
@@ -211,8 +215,56 @@ function sanitizeOvertimeDays(list, fallbackStart, fallbackEnd) {
   return days;
 }
 
+function sanitizeOvertimeRest(entry, fallback) {
+  const source = entry && typeof entry === 'object' ? entry : {};
+  let start = validTime(source.start, fallback.start);
+  let end = validTime(source.end, fallback.end);
+  if (toSeconds(end) < toSeconds(start)) {
+    const tmp = start;
+    start = end;
+    end = tmp;
+  }
+  return { start, end };
+}
+
+function sanitizeOvertimeRests(list) {
+  const source = Array.isArray(list) ? list : [];
+  return OVERTIME_REST_DEFAULTS.map((fallback, index) =>
+    sanitizeOvertimeRest(source[index], fallback));
+}
+
 function pad2(n) {
   return String(n).padStart(2, '0');
+}
+
+function sanitizeInsuranceItem(item, defaultRatio) {
+  const source = item && typeof item === 'object' ? item : {};
+  return {
+    enabled: source.enabled !== false,
+    mode: source.mode === 'fixed' ? 'fixed' : 'ratio',
+    ratio: clamp(source.ratio, 0, 100, defaultRatio),
+    amount: clamp(source.amount, 0, 1e9, 0)
+  };
+}
+
+function sanitizeInsurance(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  const base = source.base == null || source.base === ''
+    ? null
+    : clamp(source.base, 0, 1e9, 0);
+  return {
+    base,
+    social: sanitizeInsuranceItem(source.social, 10.5),
+    housingFund: sanitizeInsuranceItem(source.housingFund, 5)
+  };
+}
+
+function sanitizeTax(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    rate: clamp(source.rate, 0, 100, 10),
+    monthlyReduction: clamp(source.monthlyReduction, 0, 1e9, 0)
+  };
 }
 
 /* ------------------------------------------------------------------ */
