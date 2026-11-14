@@ -47,11 +47,21 @@
     workEnd: $('workEnd'),
     lunchStart: $('lunchStart'),
     lunchEnd: $('lunchEnd'),
+    overtimeDate: $('overtimeDate'),
+    overtimeStart: $('overtimeStart'),
+    overtimeEnd: $('overtimeEnd'),
+    overtimeAddBtn: $('overtimeAddBtn'),
+    overtimeList: $('overtimeList'),
+    overtimeError: $('overtimeError'),
     alwaysOnTop: $('alwaysOnTop'),
     openAtLogin: $('openAtLogin'),
     openAtLoginRow: $('openAtLoginRow'),
     previewDaily: $('previewDaily'),
+    previewDailyLabel: $('previewDailyLabel'),
+    previewFixed: $('previewFixed'),
     previewSaturday: $('previewSaturday'),
+    previewOvertimeLabel: $('previewOvertimeLabel'),
+    previewOvertime: $('previewOvertime'),
     previewMonth: $('previewMonth'),
     previewNote: $('previewNote')
   };
@@ -123,7 +133,9 @@
     ui.widget.classList.toggle('is-rest', c.dayType === 'rest');
     ui.widget.classList.toggle('is-overtime', c.dayType === 'overtime');
 
-    const badgeText = c.dayType === 'overtime' ? '月末周六 ×2' : c.dayType === 'rest' ? '休息日' : '工作日';
+    const badgeText = c.dayType === 'overtime'
+      ? (c.overtimeKind === 'weekend' ? '周末加班 ×2' : '月末周六 ×2')
+      : c.dayType === 'rest' ? '休息日' : '工作日';
     let badgeClass = 'badge';
     if (c.dayType === 'overtime') badgeClass += ' badge-overtime';
     if (c.dayType === 'rest') badgeClass += ' badge-rest';
@@ -139,7 +151,7 @@
 
     ui.dayBar.style.width = (c.fraction * 100).toFixed(3) + '%';
     setText(ui.dayPercent, formatPercent(c.fraction));
-    setText(ui.dayRange, workRangeText());
+    setText(ui.dayRange, workRangeText(c));
 
     setText(ui.monthTag, c.monthLabel);
     setText(ui.monthAmount, '¥' + formatMoney(c.monthly));
@@ -153,8 +165,9 @@
 
     setText(ui.rateInfo, rateText(c));
     setText(ui.modeChip, settings.useActualWorkdays
-      ? '实际 ' + trimNumber(c.effectiveWorkdays) + ' 天'
-      : trimNumber(settings.standardWorkdays) + ' 天');
+      ? '加班 实际 ' + trimNumber(c.effectiveWorkdays) + ' 天'
+      : '加班 ' + trimNumber(settings.standardWorkdays) + ' 天');
+    if (ui.modeChip) ui.modeChip.title = '加班费按此计薪天数折算';
 
     updateDerivedUI(c);
   }
@@ -165,9 +178,13 @@
       case 'before':
         return '距上班 ' + countdown;
       case 'lunch':
-        return '午休中 · 还有 ' + countdown + ' 继续';
+        return (c.overtimeKind === 'weekend' ? '休息中 · 还有 ' : '午休中 · 还有 ') + countdown + ' 继续';
       case 'working':
-        return (c.dayType === 'overtime' ? '月末周六加班中 · 距下班 ' : '上班中 · 距下班 ') + countdown;
+        if (c.dayType === 'overtime') {
+          const overtimeLabel = c.overtimeKind === 'weekend' ? '周末加班中' : '月末周六加班中';
+          return overtimeLabel + ' · 距下班 ' + countdown;
+        }
+        return '上班中 · 距下班 ' + countdown;
       case 'after':
         return '今日已下班 · 明天继续';
       default:
@@ -186,12 +203,20 @@
     return label + ' ¥' + formatMoney(c.dayAmount) + ' · 时薪 ¥' + formatMoney(c.hourlyRate);
   }
 
-  function workRangeText() {
-    const period = Calc.workPeriod(settings);
-    const lunchMinutes = Math.round(period.lunchSeconds / 60);
-    let text = settings.workStart + ' – ' + settings.workEnd;
-    if (lunchMinutes > 0) text += ' · 午休 ' + trimNumber(lunchMinutes / 60) + 'h';
+  function workRangeText(c) {
+    const period = Calc.workPeriod(settings, new Date());
+    const restMinutes = Math.round(period.restSeconds / 60);
+    let text = formatClock(period.start) + ' – ' + formatClock(period.end);
+    if (restMinutes > 0) {
+      const label = c && c.overtimeKind === 'weekend' ? '休息 ' : '午休 ';
+      text += ' · ' + label + trimNumber(restMinutes / 60) + 'h';
+    }
     return text;
+  }
+
+  function formatClock(totalSeconds) {
+    const total = Math.max(0, Math.round(totalSeconds));
+    return pad2(Math.floor(total / 3600)) + ':' + pad2(Math.floor((total % 3600) / 60));
   }
 
   function updateDerivedUI(c) {
@@ -208,14 +233,24 @@
       ui.actualWorkdaysOverride.placeholder = '自动 ' + autoDays;
     }
 
+    setText(ui.previewFixed, '¥' + formatMoney(c.fixedMonthly));
+    setText(ui.previewDailyLabel, '工作日日薪（' + c.monthlyWorkdays + ' 天）');
     setText(ui.previewDaily, '¥' + formatMoney(c.normalDailyAmount));
     setText(ui.previewSaturday, '¥' + formatMoney(c.saturdayAmount));
+    setText(ui.previewOvertimeLabel, c.monthOvertimeDays > 0
+      ? '周末加班（' + c.monthOvertimeDays + ' 天）'
+      : '周末加班');
+    setText(ui.previewOvertime, '¥' + formatMoney(c.monthOvertime));
     setText(ui.previewMonth, '¥' + formatMoney(c.monthProjected));
 
     const denom = trimNumber(c.effectiveWorkdays);
-    const formula = '日薪 = (基础 + 绩效) ÷ ' + denom + '，月末周六 = 基础 ÷ ' + denom + ' × 2（不含绩效）。';
-    const modeText = active ? '按当月实际 ' + denom + ' 天计薪：' : '按 ' + denom + ' 天计薪：';
-    setText(ui.previewNote, '本月月末周六：' + c.lastSaturdayLabel + '。' + modeText + formula);
+    const modeText = active
+      ? '月末周六 / 周末加班按当月实际 ' + denom + ' 天折算'
+      : '月末周六 / 周末加班按 ' + denom + ' 天折算';
+    const note = '固定月薪 = 基础 + 绩效 = ¥' + formatMoney(c.fixedMonthly) +
+      '，按当月 ' + c.monthlyWorkdays + ' 个工作日摊算（日薪 ¥' + formatMoney(c.normalDailyAmount) + '）。' +
+      modeText + '，加班费额外计入本月预计。';
+    setText(ui.previewNote, note);
   }
 
   /* ----------------------------- 表单 ----------------------------- */
@@ -240,6 +275,8 @@
     ui.useActualWorkdays.checked = !!settings.useActualWorkdays;
     ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     ui.openAtLogin.checked = !!settings.openAtLogin;
+
+    renderOvertimeList();
   }
 
   function bindEvents() {
@@ -270,6 +307,12 @@
     bindCheckbox('useActualWorkdays', 'useActualWorkdays');
     bindCheckbox('alwaysOnTop', 'alwaysOnTop');
     bindCheckbox('openAtLogin', 'openAtLogin');
+
+    ui.overtimeAddBtn.addEventListener('click', addOvertimeDay);
+    ui.overtimeList.addEventListener('click', onOvertimeListClick);
+    [ui.overtimeDate, ui.overtimeStart, ui.overtimeEnd].forEach((input) => {
+      input.addEventListener('input', clearOvertimeError);
+    });
 
     document.addEventListener('keydown', (event) => {
       if (event.key === 'Escape' && view === 'settings') closeSettings();
@@ -350,6 +393,122 @@
     });
   }
 
+  /* --------------------------- 周末加班 --------------------------- */
+
+  function addOvertimeDay() {
+    clearOvertimeError();
+    const date = parseDateInput(ui.overtimeDate.value);
+    if (!date) {
+      showOvertimeError('请选择加班日期');
+      return;
+    }
+    if (date.getDay() !== 0 && date.getDay() !== 6) {
+      showOvertimeError('只能添加周六或周日的加班');
+      return;
+    }
+    if (Calc.isEndOfMonthSaturday(date)) {
+      showOvertimeError('月末周六已自动按双倍计算，无需重复添加');
+      return;
+    }
+
+    const key = Calc.formatDateKey(date);
+    const days = Array.isArray(settings.overtimeDays) ? settings.overtimeDays : [];
+    if (days.some((entry) => entry.date === key)) {
+      showOvertimeError('该日期已添加');
+      return;
+    }
+
+    const workStart = ui.overtimeStart.value;
+    const workEnd = ui.overtimeEnd.value;
+    if (!workStart || !workEnd) {
+      showOvertimeError('请填写加班起止时间');
+      return;
+    }
+    if (toSeconds(workEnd) <= toSeconds(workStart)) {
+      showOvertimeError('加班结束时间需晚于开始时间');
+      return;
+    }
+
+    const next = days
+      .concat({ date: key, workStart, workEnd })
+      .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    ui.overtimeDate.value = '';
+    commit({ overtimeDays: next }, { refresh: true });
+  }
+
+  function onOvertimeListClick(event) {
+    const button = event.target.closest('.overtime-remove');
+    if (!button) return;
+    const date = button.dataset.date;
+    const days = (settings.overtimeDays || []).filter((entry) => entry.date !== date);
+    commit({ overtimeDays: days }, { refresh: true });
+  }
+
+  function renderOvertimeList() {
+    if (!ui.overtimeList) return;
+    ui.overtimeList.textContent = '';
+
+    const days = Array.isArray(settings.overtimeDays) ? settings.overtimeDays : [];
+    if (days.length === 0) {
+      const empty = document.createElement('li');
+      empty.className = 'overtime-empty';
+      empty.textContent = '暂无周末加班';
+      ui.overtimeList.appendChild(empty);
+      return;
+    }
+
+    const thisYear = new Date().getFullYear();
+    days.forEach((entry) => {
+      const date = parseDateInput(entry.date);
+      if (!date) return;
+
+      const item = document.createElement('li');
+      item.className = 'overtime-item';
+
+      const label = document.createElement('span');
+      label.className = 'overtime-date';
+      const yearPrefix = date.getFullYear() === thisYear ? '' : date.getFullYear() + '/';
+      label.textContent = yearPrefix + (date.getMonth() + 1) + '/' + date.getDate() +
+        ' ' + Calc.WEEKDAY_NAMES[date.getDay()];
+
+      const span = document.createElement('span');
+      span.className = 'overtime-rest';
+      span.textContent = entry.workStart + '–' + entry.workEnd;
+      span.title = '当天加班时段；12:00–13:30、18:00–18:30 休息不计薪';
+
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'overtime-remove';
+      remove.dataset.date = entry.date;
+      remove.title = '删除该加班日';
+      remove.setAttribute('aria-label', '删除 ' + entry.date + ' 的加班');
+      remove.textContent = '×';
+
+      item.append(label, span, remove);
+      ui.overtimeList.appendChild(item);
+    });
+  }
+
+  function parseDateInput(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+    if (!match) return null;
+    const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    if (date.getMonth() !== Number(match[2]) - 1 || date.getDate() !== Number(match[3])) return null;
+    return date;
+  }
+
+  function showOvertimeError(message) {
+    if (!ui.overtimeError) return;
+    ui.overtimeError.textContent = message;
+    ui.overtimeError.hidden = false;
+  }
+
+  function clearOvertimeError() {
+    if (!ui.overtimeError) return;
+    ui.overtimeError.hidden = true;
+    ui.overtimeError.textContent = '';
+  }
+
   async function quitApp() {
     clearTimeout(saveTimer);
     saveTimer = null;
@@ -390,6 +549,7 @@
     updatePinButton();
     computed = Calc.compute(new Date(), settings);
     render();
+    if (Object.prototype.hasOwnProperty.call(patch, 'overtimeDays')) renderOvertimeList();
     scheduleSave();
   }
 

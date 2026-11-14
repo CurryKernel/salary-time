@@ -21,6 +21,8 @@
     workEnd: '18:00',
     lunchStart: '12:00',
     lunchEnd: '13:00',
+    // 手动添加的周六 / 周日加班：{ date: 'YYYY-MM-DD', workStart, workEnd }
+    overtimeDays: [],
     // 窗口 / 系统
     alwaysOnTop: true,
     openAtLogin: false,
