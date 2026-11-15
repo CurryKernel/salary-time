@@ -34,8 +34,10 @@
       normalizeClock(s.workEnd, BASE.workEnd)
     );
     s.overtimeRests = normalizeOvertimeRests(s.overtimeRests);
+    s.compConversion = normalizeCompConversion(s.compConversion);
     s.insurance = normalizeInsurance(s.insurance);
     s.tax = normalizeTax(s.tax);
+    s.partyDues = Math.max(0, toNumber(s.partyDues, BASE.partyDues));
     return s;
   }
 
@@ -55,6 +57,14 @@
       mode: source.mode === 'fixed' ? 'fixed' : 'ratio',
       ratio: Math.min(100, Math.max(0, toNumber(source.ratio, defaultRatio))),
       amount: Math.max(0, toNumber(source.amount, 0))
+    };
+  }
+
+  function normalizeCompConversion(input) {
+    const source = input && typeof input === 'object' ? input : {};
+    return {
+      enabled: !!source.enabled,
+      hours: Math.min(1000, Math.max(0, toNumber(source.hours, 0)))
     };
   }
 
@@ -128,6 +138,8 @@
     if (!date) return null;
     const weekday = date.getDay();
     if (weekday !== 0 && weekday !== 6) return null;
+    // 月末周六统一自动转调休，不再作为手动加班记录重复添加
+    if (isEndOfMonthSaturday(date)) return null;
 
     const startSeconds = parseTimeToSeconds(entry.workStart);
     const endSeconds = parseTimeToSeconds(entry.workEnd);
@@ -144,7 +156,7 @@
       workStart = normalizeClock(entry.workStart, fallbackStart);
       workEnd = normalizeClock(entry.workEnd, fallbackEnd);
     }
-    return { date: formatDateKey(date), workStart, workEnd };
+    return { date: formatDateKey(date), workStart, workEnd, compTime: !!entry.compTime };
   }
 
   function normalizeOvertimeDays(list, fallbackStart, fallbackEnd) {
@@ -196,6 +208,13 @@
   function overtimeKind(date, settings) {
     if (isEndOfMonthSaturday(date)) return 'month-end';
     return overtimeEntryForDate(date, settings) ? 'weekend' : null;
+  }
+
+  /** 当天是否为调休日：月末周六自动转调休，或手动加班选择转调休 */
+  function isCompDay(date, settings) {
+    if (isEndOfMonthSaturday(date)) return true;
+    const entry = overtimeEntryForDate(date, settings);
+    return !!(entry && entry.compTime);
   }
 
   function daysInMonth(year, month) {
@@ -319,10 +338,12 @@
   function dayAmountForDate(date, settings) {
     const s = normalizeSettings(settings);
 
-    if (isEndOfMonthSaturday(date)) {
-      return (s.baseSalary / OVERTIME_WORKDAYS) * 2;
-    }
-    if (overtimeEntryForDate(date, s)) {
+    // 月末周六自动转调休，不计工资
+    if (isEndOfMonthSaturday(date)) return 0;
+    const overtime = overtimeEntryForDate(date, s);
+    if (overtime) {
+      // 手动加班选择转调休时不计工资
+      if (overtime.compTime) return 0;
       const period = workPeriod(s, date);
       const hourlyRate = ((s.baseSalary / OVERTIME_WORKDAYS) * 2) / OVERTIME_STANDARD_HOURS;
       return hourlyRate * (period.totalSeconds / 3600);
@@ -438,20 +459,38 @@
     let monthProjected = 0;
     let monthOvertime = 0;
     let monthOvertimeDays = 0;
+    let monthPaidOvertimeDays = 0;
+    let monthCompOvertimeDays = 0;
     for (let d = 1; d <= totalDays; d++) {
       const cursor = new Date(year, month, d);
       const amount = dayAmountForDate(cursor, s);
       monthProjected += amount;
       // 手动添加的周末加班单独统计，便于在设置页展示其对本月的贡献
-      if (overtimeEntryForDate(cursor, s)) {
-        monthOvertime += amount;
+      const overtime = overtimeEntryForDate(cursor, s);
+      if (overtime) {
         monthOvertimeDays += 1;
+        if (overtime.compTime) {
+          monthCompOvertimeDays += 1;
+        } else {
+          monthPaidOvertimeDays += 1;
+          monthOvertime += amount;
+        }
       }
     }
+    // 每个月都有一个月末周六，自动转 1 天调休
+    const monthEndCompDays = lastSaturdayDay > 0 ? 1 : 0;
+    const monthCompDays = monthEndCompDays + monthCompOvertimeDays;
     let monthly = 0;
     for (let d = 1; d <= day; d++) {
       monthly += earnedOnDate(new Date(year, month, d), date, s);
     }
+
+    // 本月调休兑换：按加班时薪把若干小时兑换成工资，计入本月累计 / 税前 / 个税
+    const conversionHours = s.compConversion.enabled ? s.compConversion.hours : 0;
+    const conversionHourly = ((s.baseSalary / OVERTIME_WORKDAYS) * 2) / OVERTIME_STANDARD_HOURS;
+    const conversionPay = round2(conversionHours * conversionHourly);
+    monthly += conversionPay;
+    monthProjected += conversionPay;
 
     const monday = startOfWeekMonday(date);
     const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
@@ -461,13 +500,13 @@
     const monthlyWorkdays = countWeekdays(year, month);
     const fixedMonthly = s.baseSalary + s.bonusSalary;
     const normalDaily = monthlyWorkdays > 0 ? fixedMonthly / monthlyWorkdays : 0;
-    const saturdayAmount = (s.baseSalary / OVERTIME_WORKDAYS) * 2;
     const hourlyRate = period.totalSeconds > 0 ? dayAmount / (period.totalSeconds / 3600) : 0;
 
     const insurance = monthlyInsurance(s);
     const taxBase = Math.max(0, monthProjected - insurance.total - 5000 - s.tax.monthlyReduction);
     const taxAmount = round2(taxBase * s.tax.rate / 100);
-    const netMonthly = round2(Math.max(0, monthProjected - insurance.total - taxAmount));
+    const partyDues = round2(s.partyDues);
+    const netMonthly = round2(Math.max(0, monthProjected - insurance.total - taxAmount - partyDues));
 
     return {
       now: date,
@@ -488,6 +527,15 @@
       monthProjected,
       monthOvertime,
       monthOvertimeDays,
+      conversionEnabled: s.compConversion.enabled,
+      conversionHours,
+      conversionHourly,
+      conversionPay,
+      monthPaidOvertimeDays,
+      monthCompOvertimeDays,
+      monthEndCompDays,
+      monthCompDays,
+      todayIsComp: isCompDay(date, s),
       insuranceBase: insurance.base,
       socialAmount: insurance.social,
       housingFundAmount: insurance.housingFund,
@@ -496,6 +544,7 @@
       taxReduction: s.tax.monthlyReduction,
       taxBase: round2(taxBase),
       taxAmount,
+      partyDues,
       netMonthly,
       weekProjected,
       monthPercent: monthProjected > 0 ? Math.min(1, monthly / monthProjected) : 0,
@@ -506,7 +555,6 @@
       monthlyWorkdays,
       fixedMonthly,
       normalDailyAmount: normalDaily,
-      saturdayAmount,
       hourlyRate,
       lastSaturday,
       lastSaturdayLabel: (month + 1) + '月' + lastSaturdayDay + '日',
@@ -530,6 +578,7 @@
     overtimeEntryForDate,
     isOvertimeDay,
     overtimeKind,
+    isCompDay,
     monthlyInsurance,
     parseTimeToSeconds,
     workPeriod,

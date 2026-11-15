@@ -49,7 +49,11 @@
     overtimeRest2Start: $('overtimeRest2Start'),
     overtimeRest2End: $('overtimeRest2End'),
     overtimeAddBtn: $('overtimeAddBtn'),
+    overtimeComp: $('overtimeComp'),
     overtimeList: $('overtimeList'),
+    compConversionEnabled: $('compConversionEnabled'),
+    compConversionHours: $('compConversionHours'),
+    compConversionHoursRow: $('compConversionHoursRow'),
     overtimeError: $('overtimeError'),
     insuranceBase: $('insuranceBase'),
     socialEnabled: $('socialEnabled'),
@@ -64,6 +68,7 @@
     taxRate: $('taxRate'),
     taxReduction: $('taxReduction'),
     taxPreview: $('taxPreview'),
+    partyDues: $('partyDues'),
     alwaysOnTop: $('alwaysOnTop'),
     openAtLogin: $('openAtLogin'),
     openAtLoginRow: $('openAtLoginRow'),
@@ -73,9 +78,14 @@
     previewSaturday: $('previewSaturday'),
     previewOvertimeLabel: $('previewOvertimeLabel'),
     previewOvertime: $('previewOvertime'),
+    previewComp: $('previewComp'),
+    previewConversionRow: $('previewConversionRow'),
+    previewConversionLabel: $('previewConversionLabel'),
+    previewConversion: $('previewConversion'),
     previewMonth: $('previewMonth'),
     previewInsurance: $('previewInsurance'),
     previewTax: $('previewTax'),
+    previewParty: $('previewParty'),
     previewNet: $('previewNet'),
     previewNote: $('previewNote')
   };
@@ -146,13 +156,24 @@
 
     ui.widget.classList.toggle('is-rest', c.dayType === 'rest');
     ui.widget.classList.toggle('is-overtime', c.dayType === 'overtime');
+    ui.widget.classList.toggle('is-comp', !!c.todayIsComp);
 
-    const badgeText = c.dayType === 'overtime'
-      ? (c.overtimeKind === 'weekend' ? '周末加班 ×2' : '月末周六 ×2')
-      : c.dayType === 'rest' ? '休息日' : '工作日';
+    let badgeText;
     let badgeClass = 'badge';
-    if (c.dayType === 'overtime') badgeClass += ' badge-overtime';
-    if (c.dayType === 'rest') badgeClass += ' badge-rest';
+    if (c.dayType === 'overtime') {
+      if (c.todayIsComp) {
+        badgeText = c.overtimeKind === 'weekend' ? '周末加班 · 转调休' : '月末周六 · 转调休';
+        badgeClass += ' badge-comp';
+      } else {
+        badgeText = c.overtimeKind === 'weekend' ? '周末加班 ×2' : '月末周六 ×2';
+        badgeClass += ' badge-overtime';
+      }
+    } else if (c.dayType === 'rest') {
+      badgeText = '休息日';
+      badgeClass += ' badge-rest';
+    } else {
+      badgeText = '工作日';
+    }
     if (ui.dayBadge.className !== badgeClass) ui.dayBadge.className = badgeClass;
     setText(ui.dayBadge, badgeText);
 
@@ -178,18 +199,33 @@
     ui.netBar.style.width = (c.monthPercent * 100).toFixed(2) + '%';
     if (ui.netAmount) {
       ui.netAmount.title = '五险一金 ¥' + formatMoney(c.insuranceTotal) +
-        ' · 个税 ¥' + formatMoney(c.taxAmount);
+        ' · 个税 ¥' + formatMoney(c.taxAmount) +
+        ' · 党费 ¥' + formatMoney(c.partyDues);
     }
 
     setText(ui.rateInfo, rateText(c));
-    setText(ui.modeChip, '加班 21.75 天');
-    if (ui.modeChip) ui.modeChip.title = '加班费固定按 21.75 天折算';
+    setText(ui.modeChip, '本月调休 ' + c.monthCompDays + ' 天');
+    if (ui.modeChip) {
+      ui.modeChip.title = '月末周六自动转调休' +
+        (c.monthCompOvertimeDays > 0 ? '，另有 ' + c.monthCompOvertimeDays + ' 天加班转调休' : '') +
+        (c.conversionEnabled ? '，本月兑换 ' + trimNumber(c.conversionHours) + ' 小时' : '');
+    }
 
     updateDerivedUI(c);
   }
 
   function statusText(c) {
     const countdown = formatCountdown(c.countdownSeconds);
+    if (c.todayIsComp) {
+      const label = c.overtimeKind === 'weekend' ? '周末加班' : '月末周六';
+      switch (c.phase) {
+        case 'before': return '距上班 ' + countdown + ' · 今日转调休';
+        case 'lunch': return '午休中 · 转调休 · 还有 ' + countdown;
+        case 'working': return label + '加班中 · 转调休 · 距下班 ' + countdown;
+        case 'after': return '今日已下班 · 已转调休';
+        default: return '今日转调休';
+      }
+    }
     switch (c.phase) {
       case 'before':
         return '距上班 ' + countdown;
@@ -209,6 +245,7 @@
   }
 
   function rateText(c) {
+    if (c.todayIsComp) return '今日转调休 · 不计工资';
     const normalHourly = c.totalWorkSeconds > 0
       ? c.normalDailyAmount / (c.totalWorkSeconds / 3600)
       : 0;
@@ -241,21 +278,38 @@
     setText(ui.previewFixed, '¥' + formatMoney(c.fixedMonthly));
     setText(ui.previewDailyLabel, '工作日日薪（' + c.monthlyWorkdays + ' 天）');
     setText(ui.previewDaily, '¥' + formatMoney(c.normalDailyAmount));
-    setText(ui.previewSaturday, '¥' + formatMoney(c.saturdayAmount));
-    setText(ui.previewOvertimeLabel, c.monthOvertimeDays > 0
-      ? '周末加班（' + c.monthOvertimeDays + ' 天）'
-      : '周末加班');
+    setText(ui.previewSaturday, c.monthEndCompDays + ' 天');
+    let overtimeLabel = '周末加班';
+    if (c.monthOvertimeDays > 0) {
+      overtimeLabel += '（' + c.monthOvertimeDays + ' 天';
+      if (c.monthCompOvertimeDays > 0) overtimeLabel += '，' + c.monthCompOvertimeDays + ' 天转调休';
+      overtimeLabel += '）';
+    }
+    setText(ui.previewOvertimeLabel, overtimeLabel);
     setText(ui.previewOvertime, '¥' + formatMoney(c.monthOvertime));
+    setText(ui.previewComp, c.monthCompDays + ' 天');
+    const conversion = settings.compConversion || {};
+    const conversionEnabled = !!conversion.enabled;
+    if (ui.compConversionHoursRow) ui.compConversionHoursRow.hidden = !conversionEnabled;
+    if (ui.previewConversionRow) ui.previewConversionRow.hidden = !conversionEnabled;
+    if (conversionEnabled) {
+      setText(ui.previewConversionLabel,
+        '调休兑换（' + trimNumber(conversion.hours) + ' 小时）');
+      setText(ui.previewConversion, '¥' + formatMoney(c.conversionPay));
+    }
     setText(ui.previewMonth, '¥' + formatMoney(c.monthProjected));
     setText(ui.previewInsurance, '¥' + formatMoney(c.insuranceTotal));
     setText(ui.previewTax, '¥' + formatMoney(c.taxAmount));
+    setText(ui.previewParty, '¥' + formatMoney(c.partyDues));
     setText(ui.previewNet, '¥' + formatMoney(c.netMonthly));
     setText(ui.insurancePreview, '¥' + formatMoney(c.insuranceTotal));
     setText(ui.taxPreview, '¥' + formatMoney(c.taxAmount));
 
     const note = '固定月薪 = 基础 + 绩效 = ¥' + formatMoney(c.fixedMonthly) +
       '，按当月 ' + c.monthlyWorkdays + ' 个工作日摊算（日薪 ¥' + formatMoney(c.normalDailyAmount) + '）。' +
-      '月末周六 / 周末加班固定按 21.75 天折算，加班费额外计入本月预计。本月到手 = 税前 − 五险一金 − 个税。';
+      '月末周六自动转调休，不计工资；周末加班可选择转调休或发工资；' +
+      '本月兑换配额按加班时薪计入税前。' +
+      '本月到手 = 税前 − 五险一金 − 个税 − 党费。';
     setText(ui.previewNote, note);
   }
 
@@ -304,6 +358,11 @@
     const tax = settings.tax || {};
     setValue(ui.taxRate, trimNumber(tax.rate));
     setValue(ui.taxReduction, trimNumber(tax.monthlyReduction));
+    setValue(ui.partyDues, trimNumber(settings.partyDues || 0));
+
+    const conversion = settings.compConversion || {};
+    ui.compConversionEnabled.value = conversion.enabled ? 'yes' : 'no';
+    setValue(ui.compConversionHours, trimNumber(conversion.hours || 0));
 
     renderOvertimeList();
   }
@@ -336,6 +395,8 @@
 
     ui.overtimeAddBtn.addEventListener('click', addOvertimeDay);
     ui.overtimeList.addEventListener('click', onOvertimeListClick);
+    ui.overtimeList.addEventListener('change', onOvertimeListChange);
+    bindCompConversion();
     [ui.overtimeDate, ui.overtimeStart, ui.overtimeEnd].forEach((input) => {
       input.addEventListener('input', clearOvertimeError);
     });
@@ -436,7 +497,7 @@
       return;
     }
     if (Calc.isEndOfMonthSaturday(date)) {
-      showOvertimeError('月末周六已自动按双倍计算，无需重复添加');
+      showOvertimeError('月末周六已自动转调休，无需重复添加');
       return;
     }
 
@@ -459,7 +520,7 @@
     }
 
     const next = days
-      .concat({ date: key, workStart, workEnd })
+      .concat({ date: key, workStart, workEnd, compTime: !!ui.overtimeComp.checked })
       .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
     ui.overtimeDate.value = '';
     commit({ overtimeDays: next }, { refresh: true });
@@ -470,6 +531,15 @@
     if (!button) return;
     const date = button.dataset.date;
     const days = (settings.overtimeDays || []).filter((entry) => entry.date !== date);
+    commit({ overtimeDays: days }, { refresh: true });
+  }
+
+  function onOvertimeListChange(event) {
+    const input = event.target.closest('.overtime-comp-check');
+    if (!input) return;
+    const date = input.dataset.date;
+    const days = (settings.overtimeDays || []).map((entry) =>
+      entry.date === date ? Object.assign({}, entry, { compTime: input.checked }) : entry);
     commit({ overtimeDays: days }, { refresh: true });
   }
 
@@ -505,6 +575,18 @@
       span.textContent = entry.workStart + '–' + entry.workEnd;
       span.title = '当天加班时段；12:00–13:30、18:00–18:30 休息不计薪';
 
+      const compLabel = document.createElement('label');
+      compLabel.className = 'overtime-comp';
+      compLabel.title = '勾选后该加班日转调休，不发现金';
+      const compInput = document.createElement('input');
+      compInput.type = 'checkbox';
+      compInput.className = 'overtime-comp-check';
+      compInput.dataset.date = entry.date;
+      compInput.checked = !!entry.compTime;
+      const compText = document.createElement('span');
+      compText.textContent = '转调休';
+      compLabel.append(compInput, compText);
+
       const remove = document.createElement('button');
       remove.type = 'button';
       remove.className = 'overtime-remove';
@@ -513,7 +595,7 @@
       remove.setAttribute('aria-label', '删除 ' + entry.date + ' 的加班');
       remove.textContent = '×';
 
-      item.append(label, span, remove);
+      item.append(label, span, compLabel, remove);
       ui.overtimeList.appendChild(item);
     });
   }
@@ -592,6 +674,35 @@
     commit({ insurance: Object.assign({}, settings.insurance, { [key]: value }) }, { refresh: true });
   }
 
+  function bindCompConversion() {
+    ui.compConversionEnabled.addEventListener('change', () => {
+      const enabled = ui.compConversionEnabled.value === 'yes';
+      commit({
+        compConversion: Object.assign({}, settings.compConversion, { enabled })
+      }, { refresh: true });
+    });
+
+    ui.compConversionHours.addEventListener('input', () => {
+      const raw = ui.compConversionHours.value.trim();
+      if (raw === '') return;
+      const value = Number(raw);
+      if (!Number.isFinite(value) || value < 0) return;
+      commit({
+        compConversion: Object.assign({}, settings.compConversion, {
+          hours: Math.min(1000, value)
+        })
+      });
+    });
+
+    ui.compConversionHours.addEventListener('blur', () => {
+      const value = Math.min(1000, Math.max(0, Number(ui.compConversionHours.value) || 0));
+      ui.compConversionHours.value = trimNumber(value);
+      commit({
+        compConversion: Object.assign({}, settings.compConversion, { hours: value })
+      }, { refresh: true });
+    });
+  }
+
   function bindDeductions() {
     ui.insuranceBase.addEventListener('input', () => {
       const raw = ui.insuranceBase.value.trim();
@@ -640,6 +751,17 @@
       const value = Math.min(1e9, Math.max(0, Number(ui.taxReduction.value) || 0));
       ui.taxReduction.value = trimNumber(value);
       commit({ tax: Object.assign({}, settings.tax, { monthlyReduction: value }) }, { refresh: true });
+    });
+
+    ui.partyDues.addEventListener('input', () => {
+      const value = Number(ui.partyDues.value);
+      if (!Number.isFinite(value) || value < 0) return;
+      commit({ partyDues: Math.min(1e9, value) });
+    });
+    ui.partyDues.addEventListener('blur', () => {
+      const value = Math.min(1e9, Math.max(0, Number(ui.partyDues.value) || 0));
+      ui.partyDues.value = trimNumber(value);
+      commit({ partyDues: value });
     });
   }
 

@@ -2,7 +2,6 @@
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const path = require('node:path');
 
 const { DEFAULT_SETTINGS } = require('../src/shared/defaults.js');
 const calc = require('../src/shared/calc.js');
@@ -15,15 +14,14 @@ const near = (actual, expected, epsilon = 1e-6) => {
 const settings = (patch) => Object.assign({}, DEFAULT_SETTINGS, patch);
 
 const normalDaily = (base, bonus, days) => (base + bonus) / days;
-const saturdayDaily = (base, days) => (base / days) * 2;
-const overtimeHourly = (base, days) => saturdayDaily(base, days) / 8;
+const overtimeHourly = (base, days) => ((base / days) * 2) / 8;
+const round2 = (value) => Math.round((value + Number.EPSILON) * 100) / 100;
 
 test('2026 年 11 月：21 个工作日，最后一个周六是 28 号', () => {
   assert.equal(calc.countWeekdays(2026, 10), 21);
   assert.equal(calc.lastSaturdayOfMonth(2026, 10), 28);
   assert.equal(calc.isEndOfMonthSaturday(new Date(2026, 10, 28)), true);
   assert.equal(calc.isEndOfMonthSaturday(new Date(2026, 10, 21)), false);
-  assert.equal(calc.isEndOfMonthSaturday(new Date(2026, 10, 27)), false);
 });
 
 test('固定月薪：普通工作日日薪 = 月薪 ÷ 当月工作日（11 月 21 天）', () => {
@@ -33,27 +31,33 @@ test('固定月薪：普通工作日日薪 = 月薪 ÷ 当月工作日（11 月 
   near(calc.dayAmountForDate(wednesday, s), normalDaily(20000, 5000, 21));
 });
 
-test('21.75 天模式：月末周六 = 基础工资/21.75*2，不含绩效', () => {
+test('月末周六自动转调休，不计工资', () => {
   const s = settings();
   const saturday = new Date(2026, 10, 28);
   assert.equal(calc.dayType(saturday, s), 'overtime');
-  near(calc.dayAmountForDate(saturday, s), saturdayDaily(20000, 21.75));
-  near(calc.dayAmountForDate(saturday, s), 1839.080459770115);
-});
-
-test('普通周末不计薪', () => {
-  const s = settings();
-  const saturday = new Date(2026, 10, 7);
-  assert.equal(calc.dayType(saturday, s), 'rest');
+  assert.equal(calc.isCompDay(saturday, s), true);
   assert.equal(calc.dayAmountForDate(saturday, s), 0);
-  const sunday = new Date(2026, 10, 8);
-  assert.equal(calc.dayType(sunday, s), 'rest');
+  const result = calc.compute(new Date(2026, 10, 28, 10, 30, 0), s);
+  assert.equal(result.todayIsComp, true);
+  assert.equal(result.todayEarned, 0);
+  assert.equal(result.monthEndCompDays, 1);
+  assert.equal(result.monthCompDays, 1);
 });
 
-test('旧的实际工作日设置不再影响加班折算，固定按 21.75', () => {
+test('普通周末不计薪，也不是调休', () => {
+  const s = settings();
+  for (const day of [7, 8]) {
+    const weekend = new Date(2026, 10, day);
+    assert.equal(calc.dayType(weekend, s), 'rest');
+    assert.equal(calc.dayAmountForDate(weekend, s), 0);
+    assert.equal(calc.isCompDay(weekend, s), false);
+  }
+});
+
+test('旧的实际工作日设置不再影响月末周六；月末周六固定转调休', () => {
   const legacy = settings({ useActualWorkdays: true, actualWorkdaysOverride: 22 });
-  near(calc.dayAmountForDate(new Date(2026, 10, 28), legacy), saturdayDaily(20000, 21.75));
-  near(calc.dayAmountForDate(new Date(2026, 10, 28), settings()), saturdayDaily(20000, 21.75));
+  assert.equal(calc.dayAmountForDate(new Date(2026, 10, 28), legacy), 0);
+  assert.equal(calc.dayAmountForDate(new Date(2026, 10, 28), settings()), 0);
 });
 
 test('工时进度：9:00-18:00，午休 12:00-13:00，共 8 小时', () => {
@@ -90,9 +94,7 @@ test('本月 / 本周累计（11 月 11 日 19:00）', () => {
   const day = normalDaily(20000, 5000, 21);
   const result = calc.compute(now, s);
 
-  // 11/2 - 11/6 + 11/9 - 11/11 = 8 个工作日
   near(result.monthly, 8 * day);
-  // 本周 11/9 - 11/15，已过 11/9 - 11/11 = 3 个工作日
   near(result.weekly, 3 * day);
   assert.equal(result.weekRangeLabel, '11/9 - 11/15');
   assert.equal(result.dayType, 'workday');
@@ -108,47 +110,32 @@ test('午休中累计金额冻结在 12:00', () => {
   near(lunch.todayEarned, day * (3 / 8));
 });
 
-test('本月预计 = 固定月薪 + 月末周六双倍', () => {
+test('本月预计 = 固定月薪（月末周六不计工资）', () => {
   const s = settings();
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
   near(result.fixedMonthly, 25000);
   near(result.normalDailyAmount, normalDaily(20000, 5000, 21));
   near(result.weekProjected, 5 * normalDaily(20000, 5000, 21));
-  near(result.monthProjected, 25000 + saturdayDaily(20000, 21.75));
-  assert.equal(result.monthOvertime, 0);
+  near(result.monthProjected, 25000);
+  near(result.monthOvertime, 0);
   assert.equal(result.monthOvertimeDays, 0);
 });
 
 test('月末正常工作结束后，本月累计正好等于本月预计', () => {
   const s = settings();
   const result = calc.compute(new Date(2026, 10, 30, 23, 0, 0), s);
-  near(result.monthly, 25000 + saturdayDaily(20000, 21.75));
+  near(result.monthly, 25000);
   near(result.monthly, result.monthProjected);
   near(result.monthPercent, 1);
 });
 
-test('旧设置下的本月预计仍按 21.75 折算月末周六', () => {
-  const s = settings({ useActualWorkdays: true });
-  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  near(result.monthProjected, 25000 + saturdayDaily(20000, 21.75));
-});
-
-test('月末周六：全天按时段累计，日薪按双倍基础工资', () => {
+test('跨月的一周：月末周六转调休，不再计入周累计', () => {
   const s = settings();
-  const morning = calc.compute(new Date(2026, 10, 28, 10, 30, 0), s);
-  const evening = calc.compute(new Date(2026, 10, 28, 21, 0, 0), s);
-  near(morning.dayAmount, saturdayDaily(20000, 21.75));
-  near(morning.todayEarned, saturdayDaily(20000, 21.75) * (1.5 / 8));
-  near(evening.todayEarned, saturdayDaily(20000, 21.75));
-});
-
-test('跨月的一周：周范围与累计跨越月份边界', () => {
-  const s = settings();
-  // 2026-11-01 是周日，本周从 10-26（周一）开始；其中 10-31 是 10 月的月末周六
+  // 2026-11-01 是周日，本周从 10-26（周一）开始；10-31 是 10 月的月末周六
   const result = calc.compute(new Date(2026, 10, 1, 10, 0, 0), s);
   assert.equal(result.weekRangeLabel, '10/26 - 11/1');
   const octDay = normalDaily(20000, 5000, 22);
-  near(result.weekly, 5 * octDay + saturdayDaily(20000, 21.75));
+  near(result.weekly, 5 * octDay);
 });
 
 test('倒计时：上班前 / 午休 / 工作中', () => {
@@ -181,10 +168,9 @@ test('手动添加周末加班：自定义时段，不足 8 小时按实际工�
   const saturday = new Date(2026, 10, 21);
   assert.equal(calc.dayType(saturday, s), 'overtime');
   assert.equal(calc.overtimeKind(saturday, s), 'weekend');
-  // 10:00-12:00 + 13:30-15:00，扣除 12:00-13:30 固定休息
+  assert.equal(calc.isCompDay(saturday, s), false);
   near(calc.workPeriod(s, saturday).totalSeconds, 3.5 * 3600);
   near(calc.dayAmountForDate(saturday, s), overtimeHourly(20000, 21.75) * 3.5);
-  // 未添加的周日仍不计薪
   assert.equal(calc.dayType(new Date(2026, 10, 22), s), 'rest');
   assert.equal(calc.dayAmountForDate(new Date(2026, 10, 22), s), 0);
 });
@@ -194,7 +180,7 @@ test('周末加班固定休息 12:00-13:30 与 18:00-18:30 均不计薪', () => 
   const at = (h, m) => new Date(2026, 10, 21, h, m, 0);
   const period = calc.workPeriod(s, new Date(2026, 10, 21));
   near(period.restSeconds, 2 * 3600);
-  near(period.totalSeconds, 8 * 3600); // 10 小时 - 1.5 小时 - 0.5 小时
+  near(period.totalSeconds, 8 * 3600);
 
   assert.equal(calc.phaseAt(at(12, 30), s), 'lunch');
   assert.equal(calc.phaseAt(at(18, 10), s), 'lunch');
@@ -219,21 +205,70 @@ test('周末加班固定按 21.75 折算时薪', () => {
     overtimeDays: [{ date: '2026-11-22', workStart: '09:00', workEnd: '18:00' }]
   });
   const period = calc.workPeriod(s, new Date(2026, 10, 22));
-  near(period.totalSeconds, 7.5 * 3600); // 9 小时 - 1.5 小时午休
+  near(period.totalSeconds, 7.5 * 3600);
   near(calc.dayAmountForDate(new Date(2026, 10, 22), s), overtimeHourly(20000, 21.75) * 7.5);
 });
 
-test('本月预计包含手动添加的周末加班（按实际工时）', () => {
-  const s = settings({ overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00' }] });
-  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  const expectedOvertime = overtimeHourly(20000, 21.75) * 3.5;
-  near(result.monthProjected,
-    25000 + saturdayDaily(20000, 21.75) + expectedOvertime);
-  near(result.monthOvertime, expectedOvertime);
+test('手动加班选择转调休：不计工资，计入调休天数', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '09:00', workEnd: '18:00', compTime: true }]
+  });
+  const saturday = new Date(2026, 10, 21);
+  assert.equal(calc.isCompDay(saturday, s), true);
+  assert.equal(calc.dayAmountForDate(saturday, s), 0);
+  const result = calc.compute(new Date(2026, 10, 21, 19, 0, 0), s);
+  assert.equal(result.todayIsComp, true);
+  assert.equal(result.todayEarned, 0);
+  assert.equal(result.monthOvertime, 0);
   assert.equal(result.monthOvertimeDays, 1);
+  assert.equal(result.monthPaidOvertimeDays, 0);
+  assert.equal(result.monthCompOvertimeDays, 1);
+  assert.equal(result.monthCompDays, 2); // 月末周六 1 天 + 手动加班 1 天
+  near(result.monthProjected, 25000);
 });
 
-test('工作日、非法日期与非法时段会被忽略，月末周六仍自动双倍', () => {
+test('手动加班未转调休时仍按实际工时发钱', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00', compTime: false }]
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  const expectedOvertime = overtimeHourly(20000, 21.75) * 3.5;
+  near(result.monthOvertime, expectedOvertime);
+  near(result.monthProjected, 25000 + expectedOvertime);
+  assert.equal(result.monthOvertimeDays, 1);
+  assert.equal(result.monthPaidOvertimeDays, 1);
+  assert.equal(result.monthCompOvertimeDays, 0);
+  assert.equal(result.monthCompDays, 1);
+});
+
+test('加班记录 compTime 会被保留；旧记录默认发工资', () => {
+  const normalized = calc.normalizeSettings({
+    baseSalary: 20000,
+    bonusSalary: 5000,
+    overtimeDays: [
+      { date: '2026-11-21', workStart: '09:00', workEnd: '18:00', compTime: true },
+      { date: '2026-11-22', workStart: '09:00', workEnd: '18:00' }
+    ]
+  });
+  assert.equal(normalized.overtimeDays[0].compTime, true);
+  assert.equal(normalized.overtimeDays[1].compTime, false);
+});
+
+test('月末周六不能再作为手动加班添加，旧的月末周六记录会被忽略', () => {
+  const normalized = calc.normalizeSettings({
+    baseSalary: 20000,
+    bonusSalary: 5000,
+    overtimeDays: [
+      { date: '2026-11-28', workStart: '09:00', workEnd: '18:00' },
+      { date: '2026-11-21', workStart: '09:00', workEnd: '18:00' }
+    ]
+  });
+  assert.equal(normalized.overtimeDays.length, 1);
+  assert.equal(normalized.overtimeDays[0].date, '2026-11-21');
+  assert.equal(calc.isCompDay(new Date(2026, 10, 28), normalized), true);
+});
+
+test('工作日、非法日期与非法时段会被忽略，月末周六自动转调休', () => {
   const s = settings({
     overtimeDays: [
       { date: '2026-11-11', workStart: '09:00', workEnd: '18:00' },
@@ -245,6 +280,7 @@ test('工作日、非法日期与非法时段会被忽略，月末周六仍自�
   assert.equal(calc.normalizeSettings(s).overtimeDays.length, 1);
   assert.equal(calc.dayType(new Date(2026, 10, 11), s), 'workday');
   assert.equal(calc.overtimeKind(new Date(2026, 10, 28), s), 'month-end');
+  assert.equal(calc.isCompDay(new Date(2026, 10, 28), s), true);
 });
 
 test('旧数据缺少加班起止时间时退回全局上下班时间', () => {
@@ -252,6 +288,7 @@ test('旧数据缺少加班起止时间时退回全局上下班时间', () => {
   const entry = calc.overtimeEntryForDate(new Date(2026, 10, 21), s);
   assert.equal(entry.workStart, '09:00');
   assert.equal(entry.workEnd, '18:00');
+  assert.equal(entry.compTime, false);
 });
 
 test('五险一金：基数默认基础工资，五险 10.5% + 公积金 5%', () => {
@@ -287,39 +324,102 @@ test('五险一金：关闭项目后不扣款', () => {
     }
   });
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  near(result.socialAmount, 0);
+  assert.equal(result.socialAmount, 0);
   near(result.housingFundAmount, 1000);
   near(result.insuranceTotal, 1000);
 });
 
-test('个税：手动税率与减除费用', () => {
+test('个税与到手：默认不含月末周六工资', () => {
   const s = settings();
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
   near(result.taxRate, 10);
   near(result.taxReduction, 0);
-  // 本月税前包含基础、绩效与月末周六双倍：25,000 + 1,839.08
-  near(result.monthProjected, 25000 + saturdayDaily(20000, 21.75));
-  near(result.taxBase, 18739.08);
-  near(result.taxAmount, 1873.91);
-  near(result.netMonthly, 21865.17);
+  near(result.monthProjected, 25000);
+  near(result.taxBase, 16900);
+  near(result.taxAmount, 1690);
+  near(result.partyDues, 0);
+  near(result.netMonthly, 20210);
 });
 
 test('个税：每月减免额度增加后个税减少', () => {
   const s = settings({ tax: { rate: 10, monthlyReduction: 2000 } });
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  near(result.taxBase, 16739.08);
-  near(result.taxAmount, 1673.91);
-  near(result.netMonthly, 22065.17);
+  near(result.taxBase, 14900);
+  near(result.taxAmount, 1490);
+  near(result.netMonthly, 20410);
 });
 
-test('本月到手：加班费计入税前与个税', () => {
-  const s = settings({ overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00' }] });
+test('党费：在个税后扣除，不影响计税基数', () => {
+  const s = settings({ partyDues: 150 });
   const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
-  near(result.monthProjected,
-    25000 + saturdayDaily(20000, 21.75) + overtimeHourly(20000, 21.75) * 3.5);
-  near(result.taxBase, 19543.68);
-  near(result.taxAmount, 1954.37);
-  near(result.netMonthly, 22589.31);
+  near(result.taxBase, 16900);
+  near(result.taxAmount, 1690);
+  near(result.partyDues, 150);
+  near(result.netMonthly, 20210 - 150);
+});
+
+test('本月到手：发钱的加班费计入税前与个税', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00', compTime: false }]
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.monthProjected, 25000 + overtimeHourly(20000, 21.75) * 3.5);
+  near(result.taxBase, 17704.60);
+  near(result.taxAmount, 1770.46);
+  near(result.netMonthly, 20934.14);
+});
+
+test('本月到手：转调休的加班费不计税前', () => {
+  const s = settings({
+    overtimeDays: [{ date: '2026-11-21', workStart: '10:00', workEnd: '15:00', compTime: true }],
+    partyDues: 100
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.monthProjected, 25000);
+  near(result.taxBase, 16900);
+  near(result.taxAmount, 1690);
+  near(result.netMonthly, 20110);
+});
+
+test('本月兑换配额：按加班时薪把小时数兑换为工资', () => {
+  const s = settings({ compConversion: { enabled: true, hours: 2.5 } });
+  const hourly = overtimeHourly(20000, 21.75);
+  const conversionPay = round2(2.5 * hourly);
+  const result = calc.compute(new Date(2026, 10, 11, 19, 0, 0), s);
+  assert.equal(calc.normalizeSettings(s).compConversion.hours, 2.5);
+  near(result.conversionHours, 2.5);
+  near(result.conversionHourly, hourly);
+  near(result.conversionPay, conversionPay);
+  near(result.conversionPay, 574.71);
+  near(result.monthProjected, 25000 + conversionPay);
+  near(result.monthly,
+    8 * normalDaily(20000, 5000, 21) + conversionPay);
+  near(result.taxBase, 25000 + conversionPay - 3100 - 5000);
+  near(result.taxAmount, round2((25000 + conversionPay - 3100 - 5000) * 0.1));
+  near(result.netMonthly,
+    25000 + conversionPay - 3100 - result.taxAmount);
+});
+
+test('本月兑换配额：关闭时不兑换，即使填了小时数', () => {
+  const s = settings({ compConversion: { enabled: false, hours: 8 } });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  near(result.conversionHours, 0);
+  near(result.conversionPay, 0);
+  near(result.monthProjected, 25000);
+  near(result.netMonthly, 20210);
+});
+
+test('本月兑换配额与党费同时生效', () => {
+  const s = settings({
+    compConversion: { enabled: true, hours: 2.5 },
+    partyDues: 100
+  });
+  const result = calc.compute(new Date(2026, 10, 11, 10, 0, 0), s);
+  const conversionPay = 574.71;
+  const taxAmount = round2((25000 + conversionPay - 3100 - 5000) * 0.1);
+  near(result.conversionPay, conversionPay);
+  near(result.partyDues, 100);
+  near(result.netMonthly, 25000 + conversionPay - 3100 - taxAmount - 100);
 });
 
 test('扣除超过税前收入时，个税与到手均为 0', () => {
@@ -336,13 +436,14 @@ test('扣除超过税前收入时，个税与到手均为 0', () => {
   near(result.netMonthly, 0);
 });
 
-test('旧配置缺少五险一金与个税时使用默认值', () => {
+test('旧配置缺少五险一金、个税与党费时使用默认值', () => {
   const s = calc.normalizeSettings({ baseSalary: 20000, bonusSalary: 5000 });
   assert.equal(s.insurance.base, null);
   near(s.insurance.social.ratio, 10.5);
   near(s.insurance.housingFund.ratio, 5);
   near(s.tax.rate, 10);
   assert.equal(s.tax.monthlyReduction, 0);
+  assert.equal(s.partyDues, 0);
 });
 
 test('加班休息时段可配置', () => {

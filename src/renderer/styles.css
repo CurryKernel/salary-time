@@ -192,6 +192,12 @@ body {
   border-color: rgba(148, 163, 184, 0.16);
 }
 
+.badge.badge-comp {
+  color: #93c5fd;
+  background: rgba(96, 165, 250, 0.12);
+  border-color: rgba(96, 165, 250, 0.28);
+}
+
 .amount {
   display: flex;
   align-items: baseline;
@@ -239,6 +245,17 @@ body {
 
 .widget.is-overtime .amount .currency {
   color: var(--amber);
+}
+
+.widget.is-comp .amount-value {
+  background: linear-gradient(120deg, #dbeafe, #93c5fd 55%, #60a5fa);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 4px 16px rgba(96, 165, 250, 0.16));
+}
+
+.widget.is-comp .amount .currency {
+  color: #93c5fd;
 }
 
 .status-line {
@@ -616,6 +633,25 @@ body {
   grid-column: 1 / -1;
 }
 
+.overtime-comp-add {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: #fcd34d;
+  cursor: pointer;
+}
+
+.overtime-comp-add input,
+.overtime-comp input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #fbbf24;
+  cursor: pointer;
+}
+
 .overtime-form .btn.add {
   grid-column: 1 / -1;
   width: 100%;
@@ -672,6 +708,16 @@ body {
 .overtime-rest {
   color: var(--text-faint);
   white-space: nowrap;
+}
+
+.overtime-comp {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #fcd34d;
+  font-size: 9.5px;
+  white-space: nowrap;
+  cursor: pointer;
 }
 
 .overtime-remove {

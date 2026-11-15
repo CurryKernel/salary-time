@@ -79,7 +79,7 @@ async function main() {
 
   const run = (script) => window.webContents.executeJavaScript(script);
 
-  // 初始状态：默认 21.75 天，主界面可见
+  // 初始状态：月末周六自动转调休，主界面可见
   let state = await run(`({
     mode: document.getElementById('modeChip').textContent,
     amount: document.getElementById('todayAmount').textContent,
@@ -89,7 +89,7 @@ async function main() {
     weekRemoved: document.getElementById('weekAmount') === null,
     settingsHidden: document.getElementById('settingsView').hidden
   })`);
-  ok('默认按 21.75 天计薪', state.mode.includes('21.75'), state.mode);
+  ok('默认显示本月调休 1 天', state.mode.includes('本月调休 1 天'), state.mode);
   ok('主界面默认可见', state.settingsHidden === true);
   ok('今日金额已渲染', /^[\d,]+\.\d{2}$/.test(state.amount), state.amount);
   ok('本月累计已渲染', /^¥[\d,]+\.\d{2}$/.test(state.monthly), state.monthly);
@@ -109,28 +109,103 @@ async function main() {
     rest1Start: document.getElementById('overtimeRest1Start').value,
     rest1End: document.getElementById('overtimeRest1End').value,
     rest2Start: document.getElementById('overtimeRest2Start').value,
-    rest2End: document.getElementById('overtimeRest2End').value
+    rest2End: document.getElementById('overtimeRest2End').value,
+    partyDues: document.getElementById('partyDues').value
   })`);
   ok('点击齿轮打开设置页', state.settingsHidden === false && state.mainHidden === true);
   ok('通知主进程调整窗口高度', calls.views[calls.views.length - 1] === 'settings');
   ok('五险默认 10.5%、公积金默认 5%', state.social === '10.5' && state.housing === '5',
     state.social + ' / ' + state.housing);
   ok('五险一金默认合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
+  ok('党费默认 0', state.partyDues === '0', state.partyDues);
   ok('个税默认税率 10%', state.taxRate === '10', state.taxRate);
   ok('加班休息时段默认 12:00–13:30、18:00–18:30',
     state.rest1Start === '12:00' && state.rest1End === '13:30' &&
     state.rest2Start === '18:00' && state.rest2End === '18:30');
 
-  // 加班折算固定按 21.75
+  // 月末周六自动转调休
   const now = new Date();
   const autoWorkdays = calc.countWeekdays(now.getFullYear(), now.getMonth());
   state = await run(`({
     mode: document.getElementById('modeChip').textContent,
-    previewSaturday: document.getElementById('previewSaturday').textContent
+    previewSaturday: document.getElementById('previewSaturday').textContent,
+    previewComp: document.getElementById('previewComp').textContent,
+    previewOvertime: document.getElementById('previewOvertime').textContent,
+    previewNet: document.getElementById('previewNet').textContent
   })`);
-  ok('加班固定按 21.75 天折算', state.mode.includes('21.75'), state.mode);
-  ok('预览月末周六按 21.75 折算',
-    state.previewSaturday === '¥' + money((20000 / 21.75) * 2), state.previewSaturday);
+  ok('月末周六自动转调休', state.mode.includes('本月调休 1 天'), state.mode);
+  ok('预览月末周六显示 1 天调休', state.previewSaturday === '1 天', state.previewSaturday);
+  ok('本月调休合计默认 1 天', state.previewComp === '1 天', state.previewComp);
+  ok('默认周末加班金额为 0', state.previewOvertime === '¥0.00', state.previewOvertime);
+
+  // 党费扣除
+  const netBeforeParty = Number(state.previewNet.replace(/[¥,]/g, ''));
+  await run(`(() => {
+    const input = document.getElementById('partyDues');
+    input.value = '200';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    previewParty: document.getElementById('previewParty').textContent,
+    previewNet: document.getElementById('previewNet').textContent
+  })`);
+  const netAfterParty = Number(state.previewNet.replace(/[¥,]/g, ''));
+  ok('党费字段可填写并显示', state.previewParty === '¥200.00', state.previewParty);
+  ok('党费从本月到手扣除', Math.abs((netBeforeParty - netAfterParty) - 200) < 0.01,
+    netBeforeParty + ' -> ' + netAfterParty);
+  ok('设置已持久化（党费）', calls.saves.some((p) => p.partyDues === 200));
+
+  // 本月兑换配额
+  state = await run(`({
+    conversion: document.getElementById('compConversionEnabled').value,
+    hoursRowHidden: document.getElementById('compConversionHoursRow').hidden,
+    previewRowHidden: document.getElementById('previewConversionRow').hidden
+  })`);
+  ok('默认不兑换调休配额',
+    state.conversion === 'no' && state.hoursRowHidden === true && state.previewRowHidden === true);
+
+  await run(`(() => {
+    const select = document.getElementById('compConversionEnabled');
+    select.value = 'yes';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(300);
+  state = await run(`document.getElementById('compConversionHoursRow').hidden`);
+  ok('选择兑换后显示小时数输入', state === false);
+
+  await run(`(() => {
+    const input = document.getElementById('compConversionHours');
+    input.value = '2.5';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  const conversionPay = Math.round((2.5 * ((20000 / 21.75) * 2 / 8) + Number.EPSILON) * 100) / 100;
+  state = await run(`({
+    previewRowHidden: document.getElementById('previewConversionRow').hidden,
+    label: document.getElementById('previewConversionLabel').textContent,
+    amount: document.getElementById('previewConversion').textContent
+  })`);
+  ok('兑换配额显示在预览中',
+    state.previewRowHidden === false && state.label.includes('2.5 小时'), state.label);
+  ok('兑换金额按加班时薪计算',
+    state.amount === '¥' + money(conversionPay), state.amount);
+  ok('兑换配置已持久化',
+    calls.saves.some((p) => p.compConversion &&
+      p.compConversion.enabled === true && p.compConversion.hours === 2.5));
+
+  // 关闭兑换，避免影响后续断言
+  await run(`(() => {
+    const select = document.getElementById('compConversionEnabled');
+    select.value = 'no';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    hidden: document.getElementById('compConversionHoursRow').hidden,
+    previewHidden: document.getElementById('previewConversionRow').hidden
+  })`);
+  ok('关闭兑换后隐藏小时数输入', state.hidden === true && state.previewHidden === true);
 
   // 修改基础工资
   await run(`(() => {
@@ -196,13 +271,70 @@ async function main() {
     previewLabel: document.getElementById('previewOvertimeLabel').textContent
   })`);
   ok('添加周末加班日', state.count === 1, state.text);
-  ok('加班金额计入本月预计预览',
+  ok('未勾选转调休时加班金额计入本月预计预览',
     /^¥(?!0\.00$)[\d,]+\.\d{2}$/.test(state.previewOvertime) && state.previewLabel.includes('1 天'),
     state.previewOvertime + ' / ' + state.previewLabel);
   ok('加班日已持久化',
     calls.saves.some((p) => Array.isArray(p.overtimeDays) &&
       p.overtimeDays.length === 1 && p.overtimeDays[0].date === overtimeDate &&
-      p.overtimeDays[0].workStart === '10:00' && p.overtimeDays[0].workEnd === '15:00'));
+      p.overtimeDays[0].workStart === '10:00' && p.overtimeDays[0].workEnd === '15:00' &&
+      p.overtimeDays[0].compTime === false));
+
+  // 加班切换为转调休
+  await run(`(() => {
+    const input = document.querySelector('#overtimeList .overtime-comp-check');
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    previewOvertime: document.getElementById('previewOvertime').textContent,
+    previewComp: document.getElementById('previewComp').textContent,
+    previewLabel: document.getElementById('previewOvertimeLabel').textContent,
+    checked: document.querySelector('#overtimeList .overtime-comp-check').checked
+  })`);
+  ok('加班可勾选转调休', state.checked === true);
+  ok('转调休后不计加班费', state.previewOvertime === '¥0.00', state.previewOvertime);
+  ok('转调休后本月调休变为 2 天', state.previewComp === '2 天', state.previewComp);
+  ok('预览标注 1 天转调休', state.previewLabel.includes('1 天转调休'), state.previewLabel);
+  ok('转调休状态已持久化',
+    calls.saves.some((p) => Array.isArray(p.overtimeDays) &&
+      p.overtimeDays.some((entry) => entry.date === overtimeDate && entry.compTime === true)));
+
+  // 切回发工资
+  await run(`(() => {
+    const input = document.querySelector('#overtimeList .overtime-comp-check');
+    input.checked = false;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    previewOvertime: document.getElementById('previewOvertime').textContent,
+    previewComp: document.getElementById('previewComp').textContent
+  })`);
+  ok('切回发工资后加班费恢复', /^¥(?!0\.00$)[\d,]+\.\d{2}$/.test(state.previewOvertime), state.previewOvertime);
+  ok('切回发工资后本月调休恢复 1 天', state.previewComp === '1 天', state.previewComp);
+
+  // 先删除刚才的加班，再用同一日期测试添加时直接勾选转调休
+  await run(`document.querySelector('#overtimeList .overtime-remove').click()`);
+  await sleep(700);
+
+  await run(`(() => {
+    const input = document.getElementById('overtimeDate');
+    input.value = '${overtimeDate}';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('overtimeStart').value = '10:00';
+    document.getElementById('overtimeEnd').value = '15:00';
+    document.getElementById('overtimeComp').checked = true;
+    document.getElementById('overtimeAddBtn').click();
+  })()`);
+  await sleep(700);
+  state = await run(`({
+    checked: document.querySelector('#overtimeList .overtime-comp-check') ? document.querySelector('#overtimeList .overtime-comp-check').checked : null,
+    previewOvertime: document.getElementById('previewOvertime').textContent
+  })`);
+  ok('添加时勾选转调休', state.checked === true && state.previewOvertime === '¥0.00',
+    state.checked + ' / ' + state.previewOvertime);
 
   await run(`document.querySelector('#overtimeList .overtime-remove').click()`);
   await sleep(700);
@@ -254,14 +386,20 @@ async function main() {
     previewFixed: document.getElementById('previewFixed').textContent,
     previewDaily: document.getElementById('previewDaily').textContent,
     taxRate: document.getElementById('taxRate').value,
+    partyDues: document.getElementById('partyDues').value,
+    conversion: document.getElementById('compConversionEnabled').value,
+    conversionHidden: document.getElementById('compConversionHoursRow').hidden,
     insurancePreview: document.getElementById('insurancePreview').textContent
   })`);
   ok('恢复默认后基础工资为 20000', state.base === '20000', state.base);
-  ok('恢复默认后按 21.75 天折算加班', state.mode.includes('21.75'), state.mode);
+  ok('恢复默认后月末周六自动转调休', state.mode.includes('本月调休 1 天'), state.mode);
   ok('恢复默认后固定月薪正确', state.previewFixed === '¥' + money(25000), state.previewFixed);
   ok('恢复默认后工作日日薪 = 月薪 ÷ 当月工作日',
     state.previewDaily === '¥' + money(25000 / autoWorkdays), state.previewDaily);
   ok('恢复默认后个税税率 10%', state.taxRate === '10', state.taxRate);
+  ok('恢复默认后党费为 0', state.partyDues === '0', state.partyDues);
+  ok('恢复默认后本月兑换配额为不兑换',
+    state.conversion === 'no' && state.conversionHidden === true);
   ok('恢复默认后五险一金合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
 
   window.destroy();

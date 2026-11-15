@@ -154,8 +154,10 @@ function sanitizeSettings(input) {
   }
   s.overtimeDays = sanitizeOvertimeDays(source.overtimeDays, s.workStart, s.workEnd);
   s.overtimeRests = sanitizeOvertimeRests(source.overtimeRests);
+  s.compConversion = sanitizeCompConversion(source.compConversion);
   s.insurance = sanitizeInsurance(source.insurance);
   s.tax = sanitizeTax(source.tax);
+  s.partyDues = clamp(source.partyDues, 0, 1e9, 0);
 
   s.alwaysOnTop = source.alwaysOnTop !== false;
   s.openAtLogin = !!source.openAtLogin;
@@ -171,6 +173,16 @@ function sanitizeSettings(input) {
 function toSeconds(value) {
   const parts = String(value || '').split(':');
   return Number(parts[0]) * 3600 + Number(parts[1]) * 60;
+}
+
+function isMonthEndSaturday(date) {
+  if (date.getDay() !== 6) return false;
+  const total = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate();
+  for (let day = total; day >= 1; day--) {
+    const candidate = new Date(date.getFullYear(), date.getMonth(), day);
+    if (candidate.getDay() === 6) return day === date.getDate();
+  }
+  return false;
 }
 
 /** 只保留合法的周末加班记录：真实存在的周六 / 周日、有效上下班时段，日期去重 */
@@ -190,6 +202,8 @@ function sanitizeOvertimeDays(list, fallbackStart, fallbackEnd) {
     const date = new Date(year, month, day);
     if (date.getFullYear() !== year || date.getMonth() !== month || date.getDate() !== day) continue;
     if (date.getDay() !== 0 && date.getDay() !== 6) continue;
+    // 月末周六自动转调休，不再保留为手动加班记录
+    if (isMonthEndSaturday(date)) continue;
 
     const key = date.getFullYear() + '-' + pad2(date.getMonth() + 1) + '-' + pad2(date.getDate());
     if (seen.has(key)) continue;
@@ -207,12 +221,20 @@ function sanitizeOvertimeDays(list, fallbackStart, fallbackEnd) {
     }
 
     seen.add(key);
-    days.push({ date: key, workStart: start, workEnd: end });
+    days.push({ date: key, workStart: start, workEnd: end, compTime: !!entry.compTime });
     if (days.length >= MAX_OVERTIME_DAYS) break;
   }
 
   days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return days;
+}
+
+function sanitizeCompConversion(input) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    enabled: !!source.enabled,
+    hours: clamp(source.hours, 0, 1000, 0)
+  };
 }
 
 function sanitizeOvertimeRest(entry, fallback) {
