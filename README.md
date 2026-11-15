@@ -140,7 +140,7 @@ npm run install:mac
 > 启动器引用当前项目目录，如果移动或删除了项目，请在新位置重新执行 `npm run install:mac`。
 > 需要开机自启时，请到「系统设置 → 通用 → 登录项」中添加「工资实时统计.app」。
 > 详细步骤与常见问题见 [macOS 安装教程](docs/macos-install.md)。
-> `npm run dist:mac` 仍可生成传统 DMG，但未签名 DMG 在部分 macOS 上无法直接双击启动。
+> 发行版同时附带 macOS arm64 DMG；DMG 未签名，部分 macOS 上需要在「系统设置 → 隐私与安全性」中允许打开。`npm run dist:mac` 可自行重新生成。
 
 ## 在 Windows 上使用
 

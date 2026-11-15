@@ -10,9 +10,10 @@
 | --- | --- | --- | --- |
 | Windows 10 / 11（x64） | `SalaryTime-Setup-1.0.0.exe` | 约 116 MB | 安装版，可选安装目录，自动创建桌面快捷方式 |
 | Windows 10 / 11（x64） | `SalaryTime-Portable-1.0.0.exe` | 约 105 MB | 免安装便携版，双击即可运行 |
+| macOS（Apple Silicon） | `SalaryTime-1.0.0-arm64.dmg` | 约 116 MB | 双击挂载后把 SalaryTime 拖入「应用程序」 |
 | macOS | 从源码安装 | — | 按 [macOS 安装教程](https://github.com/CurryKernel/salary-time/blob/main/docs/macos-install.md) 执行 `npm run install:mac` |
 
-> macOS 未提供签名 DMG；推荐使用源码 + 启动器方式，不需要 Apple 开发者账号。
+> macOS DMG 未做 Apple 开发者签名，首次打开如提示无法验证开发者，请右键应用选择「打开」。如果 DMG 被 Gatekeeper 拦截，可使用源码 + 启动器方式，不需要开发者账号。
 
 ## 功能亮点
 
@@ -77,7 +78,7 @@
 - 党费按固定金额在个税后扣除，不参与计税。
 - 个税为简化估算（手动税率 + 每月减免额度），不做累计预扣预缴、年终奖与汇算清缴。
 - 五险一金仅计算个人缴纳部分。
-- macOS 推荐使用源码 + `npm run install:mac` 的启动器方式；未签名的 DMG 在部分 macOS 上会被 Gatekeeper 拦截。
+- macOS 同时提供 arm64 DMG 和源码启动器方式；DMG 未签名，部分 macOS 上可能需要在「系统设置 → 隐私与安全性」中允许打开。
 
 ## 文件校验
 
