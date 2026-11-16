@@ -87,10 +87,10 @@ if (!hasSingleInstanceLock) {
     debugLog('app ready');
     settings = readSettings();
     registerIpc();
+    if (isMac && app.dock) app.dock.hide();
     createWindow();
     createTray();
     applySystemSettings();
-    if (isMac && app.dock) app.dock.hide();
     maybeCapture();
     debugLog('startup complete');
   });
@@ -627,13 +627,30 @@ function toggleWindow() {
 }
 
 function createTray() {
-  let image = nativeImage.createFromPath(assetPath('tray.png'));
-  if (image.isEmpty()) {
-    image = nativeImage.createFromPath(assetPath('icon.png'));
+  let image;
+  if (isMac) {
+    image = nativeImage.createFromPath(assetPath('trayTemplate.png'));
+    if (image.isEmpty()) image = nativeImage.createFromPath(assetPath('tray.png'));
+    if (!image.isEmpty()) {
+      image = image.resize({ width: 18, height: 18 });
+      image.setTemplateImage(true);
+    }
+  } else {
+    image = nativeImage.createFromPath(assetPath('tray.png'));
+    if (image.isEmpty()) image = nativeImage.createFromPath(assetPath('icon.png'));
   }
-  if (isMac) image = image.resize({ width: 18, height: 18 });
 
   tray = new Tray(image);
+  if (isMac) tray.setTitle('¥');
+  console.log('[tray]', 'empty=' + image.isEmpty(),
+    'size=' + JSON.stringify(image.getSize()),
+    'bounds=' + JSON.stringify(tray.getBounds()));
+  setTimeout(() => {
+    if (tray && !tray.isDestroyed()) {
+      console.log('[tray-later]', JSON.stringify(tray.getBounds()),
+        'title=' + tray.getTitle());
+    }
+  }, 2000);
   tray.setToolTip('工资实时统计');
   rebuildTrayMenu();
   tray.on('click', toggleWindow);
