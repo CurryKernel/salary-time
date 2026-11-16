@@ -9,6 +9,8 @@ contextBridge.exposeInMainWorld('salary', {
   setView: (view) => ipcRenderer.send('window:set-view', view),
   hide: () => ipcRenderer.send('window:hide'),
   quit: () => ipcRenderer.send('window:quit'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  openUpdate: (url) => ipcRenderer.invoke('update:open', url),
   onSettingsUpdated: (callback) => {
     const listener = (event, value) => callback(value);
     ipcRenderer.on('settings:updated', listener);

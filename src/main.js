@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const { DEFAULT_SETTINGS } = require('./shared/defaults.js');
@@ -160,6 +160,11 @@ function sanitizeSettings(input) {
   s.partyDues = clamp(source.partyDues, 0, 1e9, 0);
 
   s.alwaysOnTop = source.alwaysOnTop !== false;
+  s.moneyEffect = !!source.moneyEffect;
+  s.theme = source.theme === 'light' ? 'light' : 'dark';
+  s.customBackground = sanitizeBackground(source.customBackground);
+  s.backgroundOpacity = clamp(source.backgroundOpacity, 0, 1, 0.55);
+  s.autoUpdateCheck = source.autoUpdateCheck !== false;
   s.openAtLogin = !!source.openAtLogin;
 
   const bounds = source.windowBounds;
@@ -227,6 +232,25 @@ function sanitizeOvertimeDays(list, fallbackStart, fallbackEnd) {
 
   days.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
   return days;
+}
+
+function compareVersions(a, b) {
+  const parse = (value) => String(value || '').split('.').map((part) => Number.parseInt(part, 10) || 0);
+  const left = parse(a);
+  const right = parse(b);
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const l = left[index] || 0;
+    const r = right[index] || 0;
+    if (l !== r) return l - r;
+  }
+  return 0;
+}
+
+function sanitizeBackground(value) {
+  if (typeof value !== 'string') return '';
+  if (!/^data:image\//.test(value)) return '';
+  if (value.length > 4 * 1024 * 1024) return '';
+  return value;
 }
 
 function sanitizeCompConversion(input) {
@@ -517,7 +541,44 @@ function registerIpc() {
     return settings;
   });
 
-  ipcMain.on('window:set-view', (event, view) => setView(view === 'settings' ? 'settings' : 'widget'));
+  ipcMain.handle('update:check', async () => {
+    const current = app.getVersion();
+    try {
+      const response = await fetch(
+        'https://api.github.com/repos/CurryKernel/salary-time/releases/latest',
+        {
+          headers: {
+            'User-Agent': 'salary-time',
+            'Accept': 'application/vnd.github+json'
+          },
+          signal: AbortSignal.timeout(8000)
+        }
+      );
+      if (!response.ok) {
+        return { current, error: 'HTTP ' + response.status };
+      }
+      const data = await response.json();
+      const latest = String(data.tag_name || '').replace(/^v/, '');
+      return {
+        current,
+        latest,
+        url: data.html_url || '',
+        hasUpdate: compareVersions(latest, current) > 0
+      };
+    } catch (error) {
+      return { current, error: error && error.message ? error.message : 'network error' };
+    }
+  });
+
+  ipcMain.handle('update:open', (event, url) => {
+    if (typeof url === 'string' && /^https:\/\//.test(url)) {
+      shell.openExternal(url).catch(() => {});
+      return true;
+    }
+    return false;
+  });
+
+  ipcMain.on('window:set-view', (event, view) => setView(view === 'widget' ? 'widget' : 'settings'));
   ipcMain.on('window:hide', () => {
     if (!mainWindow) return;
     mainWindow.hide();
@@ -546,9 +607,9 @@ function maybeCapture() {
   const view = process.env.SALARY_CAPTURE_VIEW || 'widget';
 
   mainWindow.webContents.once('did-finish-load', () => {
-    if (view === 'settings') {
+    if (view !== 'widget') {
       setTimeout(() => {
-        if (mainWindow) mainWindow.webContents.send('debug:view', 'settings');
+        if (mainWindow) mainWindow.webContents.send('debug:view', view);
       }, 500);
     }
     setTimeout(async () => {

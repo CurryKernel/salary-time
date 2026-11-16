@@ -31,8 +31,38 @@
     modeChip: $('modeChip'),
     pinBtn: $('pinBtn'),
     settingsBtn: $('settingsBtn'),
+    payslipBtn: $('payslipBtn'),
+    payslipView: $('payslipView'),
+    payslipMonth: $('payslipMonth'),
+    payslipHint: $('payslipHint'),
+    payslipBackBtn: $('payslipBackBtn'),
+    payslipFixed: $('payslipFixed'),
+    payslipDailyLabel: $('payslipDailyLabel'),
+    payslipDaily: $('payslipDaily'),
+    payslipOvertimeLabel: $('payslipOvertimeLabel'),
+    payslipOvertime: $('payslipOvertime'),
+    payslipComp: $('payslipComp'),
+    payslipConversionRow: $('payslipConversionRow'),
+    payslipConversionLabel: $('payslipConversionLabel'),
+    payslipConversion: $('payslipConversion'),
+    payslipGross: $('payslipGross'),
+    payslipInsurance: $('payslipInsurance'),
+    payslipTax: $('payslipTax'),
+    payslipParty: $('payslipParty'),
+    payslipNet: $('payslipNet'),
     hideBtn: $('hideBtn'),
     quitBtn: $('quitBtn'),
+    moneyBtn: $('moneyBtn'),
+    moneyRain: $('moneyRain'),
+    customBg: $('customBg'),
+    bgTint: $('bgTint'),
+    themeSelect: $('themeSelect'),
+    bgPickBtn: $('bgPickBtn'),
+    bgClearBtn: $('bgClearBtn'),
+    bgFileInput: $('bgFileInput'),
+    bgOpacityRow: $('bgOpacityRow'),
+    bgOpacity: $('bgOpacity'),
+    bgOpacityValue: $('bgOpacityValue'),
     doneBtn: $('doneBtn'),
     resetBtn: $('resetBtn'),
     baseSalary: $('baseSalary'),
@@ -72,6 +102,10 @@
     alwaysOnTop: $('alwaysOnTop'),
     openAtLogin: $('openAtLogin'),
     openAtLoginRow: $('openAtLoginRow'),
+    updateCheckBtn: $('updateCheckBtn'),
+    autoUpdateCheck: $('autoUpdateCheck'),
+    updateStatus: $('updateStatus'),
+    currentVersion: $('currentVersion'),
     previewDaily: $('previewDaily'),
     previewDailyLabel: $('previewDailyLabel'),
     previewFixed: $('previewFixed'),
@@ -105,6 +139,12 @@
   let settingsGeneration = 0;
   let saveTimer = null;
   let tickTimer = null;
+  let moneyTimer = null;
+  let lastHour = null;
+  let appVersion = '';
+  let updateUrl = '';
+  let updateChecking = false;
+  let autoUpdateTimer = null;
 
   init();
 
@@ -113,6 +153,7 @@
       const state = await window.salary.getState();
       if (state && state.settings) settings = state.settings;
       packaged = !!(state && state.packaged);
+      appVersion = (state && state.version) || '';
     } catch (error) {
       console.error('读取设置失败', error);
     }
@@ -123,16 +164,27 @@
     computed = Calc.compute(new Date(), settings);
     render();
     updatePinButton();
+    scheduleAutoUpdateCheck();
 
     clearInterval(tickTimer);
     tickTimer = setInterval(() => {
-      computed = Calc.compute(new Date(), settings);
+      const now = new Date();
+      computed = Calc.compute(now, settings);
       render();
+      const hourKey = now.getFullYear() * 1000000 + now.getMonth() * 10000 +
+        now.getDate() * 100 + now.getHours();
+      if (lastHour === null) {
+        lastHour = hourKey;
+      } else if (hourKey !== lastHour) {
+        lastHour = hourKey;
+        if (settings.moneyEffect && view === 'widget') triggerMoneyRain();
+      }
     }, 100);
 
     if (window.salary.onDebugView) {
       window.salary.onDebugView((target) => {
         if (target === 'settings') openSettings();
+        else if (target === 'payslip') openPayslip();
       });
     }
     if (window.salary.onSettingsUpdated) {
@@ -142,6 +194,7 @@
         settings = updated;
         fillFormValues();
         updatePinButton();
+        scheduleAutoUpdateCheck();
         computed = Calc.compute(new Date(), settings);
         render();
       });
@@ -339,6 +392,8 @@
 
     ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     ui.openAtLogin.checked = !!settings.openAtLogin;
+    ui.autoUpdateCheck.checked = settings.autoUpdateCheck !== false;
+    setText(ui.currentVersion, appVersion ? 'v' + appVersion : '');
 
     const insurance = settings.insurance || {};
     const social = insurance.social || {};
@@ -360,6 +415,11 @@
     setValue(ui.taxReduction, trimNumber(tax.monthlyReduction));
     setValue(ui.partyDues, trimNumber(settings.partyDues || 0));
 
+    ui.themeSelect.value = settings.theme === 'light' ? 'light' : 'dark';
+    const backgroundOpacity = Number(settings.backgroundOpacity);
+    setValue(ui.bgOpacity, String(Math.round(
+      (Number.isFinite(backgroundOpacity) ? backgroundOpacity : 0.55) * 100)));
+
     const conversion = settings.compConversion || {};
     ui.compConversionEnabled.value = conversion.enabled ? 'yes' : 'no';
     setValue(ui.compConversionHours, trimNumber(conversion.hours || 0));
@@ -376,9 +436,40 @@
       if (view === 'settings') closeSettings();
       else openSettings();
     });
+    ui.payslipBtn.addEventListener('click', () => {
+      if (view === 'payslip') closePayslip();
+      else openPayslip();
+    });
+    ui.payslipBackBtn.addEventListener('click', closePayslip);
+    ui.payslipMonth.addEventListener('change', renderPayslip);
 
     ui.hideBtn.addEventListener('click', () => window.salary.hide());
-    ui.quitBtn.addEventListener('click', quitApp);
+    ui.quitBtn.addEventListener('click', () => window.salary.hide());
+    ui.moneyBtn.addEventListener('click', () => {
+      const enabled = !settings.moneyEffect;
+      commit({ moneyEffect: enabled }, { refresh: true });
+      if (enabled) {
+        if (view === 'widget') setTimeout(triggerMoneyRain, 120);
+      } else {
+        clearMoneyRain();
+      }
+    });
+
+    ui.themeSelect.addEventListener('change', () => {
+      commit({ theme: ui.themeSelect.value === 'light' ? 'light' : 'dark' },
+        { refresh: true });
+    });
+
+    ui.bgPickBtn.addEventListener('click', () => ui.bgFileInput.click());
+    ui.bgClearBtn.addEventListener('click', () => {
+      commit({ customBackground: '' }, { refresh: true });
+    });
+    ui.bgFileInput.addEventListener('change', onBackgroundPicked);
+    ui.bgOpacity.addEventListener('input', () => {
+      const percent = Math.min(100, Math.max(0, Number(ui.bgOpacity.value) || 0));
+      setText(ui.bgOpacityValue, Math.round(percent) + '%');
+      commit({ backgroundOpacity: percent / 100 });
+    });
     ui.doneBtn.addEventListener('click', closeSettings);
     ui.resetBtn.addEventListener('click', resetSettings);
 
@@ -393,6 +484,18 @@
     bindCheckbox('alwaysOnTop', 'alwaysOnTop');
     bindCheckbox('openAtLogin', 'openAtLogin');
 
+    ui.updateCheckBtn.addEventListener('click', () => {
+      if (updateUrl) {
+        window.salary.openUpdate(updateUrl);
+        return;
+      }
+      checkForUpdate(false);
+    });
+    ui.autoUpdateCheck.addEventListener('change', () => {
+      commit({ autoUpdateCheck: ui.autoUpdateCheck.checked }, { refresh: true });
+      scheduleAutoUpdateCheck();
+    });
+
     ui.overtimeAddBtn.addEventListener('click', addOvertimeDay);
     ui.overtimeList.addEventListener('click', onOvertimeListClick);
     ui.overtimeList.addEventListener('change', onOvertimeListChange);
@@ -405,7 +508,9 @@
     bindDeductions();
 
     document.addEventListener('keydown', (event) => {
-      if (event.key === 'Escape' && view === 'settings') closeSettings();
+      if (event.key !== 'Escape') return;
+      if (view === 'settings') closeSettings();
+      else if (view === 'payslip') closePayslip();
     });
   }
 
@@ -481,6 +586,84 @@
     input.addEventListener('change', () => {
       commit({ [key]: input.checked }, { refresh: true });
     });
+  }
+
+  /* ----------------------------- 更新检查 ----------------------------- */
+
+  async function checkForUpdate(auto) {
+    if (updateChecking) return;
+    updateChecking = true;
+    setText(ui.updateStatus, '正在检查更新…');
+    ui.updateCheckBtn.disabled = true;
+    try {
+      const result = await window.salary.checkUpdate();
+      if (!result || result.error) {
+        updateUrl = '';
+        ui.updateCheckBtn.textContent = '检查更新';
+        setText(ui.updateStatus, '检查更新失败：' + ((result && result.error) || '网络异常'));
+        return;
+      }
+      if (result.hasUpdate) {
+        updateUrl = result.url || '';
+        ui.updateCheckBtn.textContent = '去下载 v' + result.latest;
+        setText(ui.updateStatus,
+          '发现新版本 v' + result.latest + '（当前 v' + result.current +
+          '），点击「去下载」打开 Release 页面。');
+      } else {
+        updateUrl = '';
+        ui.updateCheckBtn.textContent = '检查更新';
+        setText(ui.updateStatus, '已是最新版本 v' + (result.current || appVersion) + '。');
+      }
+    } catch (error) {
+      updateUrl = '';
+      ui.updateCheckBtn.textContent = '检查更新';
+      setText(ui.updateStatus, '检查更新失败：' + (error && error.message ? error.message : '未知错误'));
+    } finally {
+      updateChecking = false;
+      ui.updateCheckBtn.disabled = false;
+    }
+  }
+
+  function scheduleAutoUpdateCheck() {
+    clearTimeout(autoUpdateTimer);
+    autoUpdateTimer = null;
+    if (settings.autoUpdateCheck === false) return;
+    const now = new Date();
+    const next = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 3, 0, 0);
+    if (next.getTime() <= now.getTime()) next.setDate(next.getDate() + 1);
+    autoUpdateTimer = setTimeout(() => {
+      checkForUpdate(true);
+      scheduleAutoUpdateCheck();
+    }, Math.max(1000, next.getTime() - now.getTime()));
+  }
+
+  function onBackgroundPicked() {
+    const file = ui.bgFileInput.files && ui.bgFileInput.files[0];
+    ui.bgFileInput.value = '';
+    if (!file || !/^image\//.test(file.type)) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = new Image();
+      image.onload = () => {
+        const maxSide = 1400;
+        const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(image.width * scale));
+        canvas.height = Math.max(1, Math.round(image.height * scale));
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+        commit({
+          customBackground: dataUrl,
+          backgroundOpacity: Number.isFinite(Number(settings.backgroundOpacity))
+            ? settings.backgroundOpacity
+            : 0.55
+        }, { refresh: true });
+      };
+      image.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   /* --------------------------- 周末加班 --------------------------- */
@@ -837,6 +1020,7 @@
       settings = await window.salary.resetSettings();
       fillFormValues(true);
       updatePinButton();
+      scheduleAutoUpdateCheck();
       computed = Calc.compute(new Date(), settings);
       render();
     } catch (error) {
@@ -891,14 +1075,79 @@
     if (ui.alwaysOnTop.checked !== !!settings.alwaysOnTop) {
       ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     }
+    ui.moneyBtn.classList.toggle('money-active', !!settings.moneyEffect);
+    ui.moneyBtn.title = settings.moneyEffect ? '整点撒钱特效（开）' : '整点撒钱特效（关）';
+    ui.moneyBtn.setAttribute('aria-pressed', settings.moneyEffect ? 'true' : 'false');
+    applyAppearance();
+  }
+
+  /* ----------------------------- 外观 ----------------------------- */
+
+  function applyAppearance() {
+    const light = settings.theme === 'light';
+    ui.widget.classList.toggle('theme-light', light);
+
+    const background = typeof settings.customBackground === 'string' ? settings.customBackground : '';
+    const opacity = Math.min(1, Math.max(0, Number(settings.backgroundOpacity) || 0));
+    if (background) {
+      ui.customBg.hidden = false;
+      ui.bgTint.hidden = false;
+      ui.customBg.style.backgroundImage = 'url("' + background + '")';
+      ui.customBg.style.opacity = String(opacity);
+    } else {
+      ui.customBg.hidden = true;
+      ui.bgTint.hidden = true;
+      ui.customBg.style.backgroundImage = '';
+    }
+    if (ui.bgOpacityRow) ui.bgOpacityRow.hidden = !background;
+    if (ui.bgOpacity && document.activeElement !== ui.bgOpacity) {
+      ui.bgOpacity.value = String(Math.round(opacity * 100));
+    }
+    setText(ui.bgOpacityValue, Math.round(opacity * 100) + '%');
+  }
+
+  /* ----------------------------- 撒钱特效 ----------------------------- */
+
+  function triggerMoneyRain() {
+    if (!ui.moneyRain) return;
+    clearTimeout(moneyTimer);
+    ui.moneyRain.textContent = '';
+    ui.moneyRain.hidden = false;
+    const count = 36;
+    for (let index = 0; index < count; index++) {
+      const particle = document.createElement('span');
+      particle.className = 'money-particle';
+      particle.textContent = '¥';
+      const size = 14 + Math.random() * 14;
+      particle.style.left = (2 + Math.random() * 94) + '%';
+      particle.style.top = '0';
+      particle.style.setProperty('--coin-size', size.toFixed(1) + 'px');
+      particle.style.animationDelay = (Math.random() * 1.2).toFixed(2) + 's';
+      particle.style.animationDuration = (1.6 + Math.random() * 1.5).toFixed(2) + 's';
+      particle.style.setProperty('--drift', ((Math.random() * 2 - 1) * 34).toFixed(1) + 'px');
+      particle.style.setProperty('--spin', (180 + Math.random() * 720).toFixed(0) + 'deg');
+      ui.moneyRain.appendChild(particle);
+    }
+    moneyTimer = setTimeout(clearMoneyRain, 4200);
+  }
+
+  function clearMoneyRain() {
+    clearTimeout(moneyTimer);
+    moneyTimer = null;
+    if (!ui.moneyRain) return;
+    ui.moneyRain.hidden = true;
+    ui.moneyRain.textContent = '';
   }
 
   /* ----------------------------- 视图 ----------------------------- */
 
   function openSettings() {
     if (view === 'settings' || !computed) return;
+    clearMoneyRain();
     view = 'settings';
     ui.mainView.hidden = true;
+    ui.payslipView.hidden = true;
+    ui.payslipBtn.classList.remove('active');
     ui.settingsView.hidden = false;
     ui.settingsBtn.classList.add('active');
     ui.settingsBtn.title = '返回主界面';
@@ -916,6 +1165,80 @@
     ui.settingsBtn.title = '设置';
     setText(ui.headerTitle, '工资实时统计');
     window.salary.setView('widget');
+  }
+
+  function openPayslip() {
+    if (view === 'payslip' || !computed) return;
+    clearMoneyRain();
+    const now = new Date();
+    const monthValue = now.getFullYear() + '-' + pad2(now.getMonth() + 1);
+    if (!ui.payslipMonth.value) ui.payslipMonth.value = monthValue;
+    ui.payslipMonth.max = monthValue;
+    view = 'payslip';
+    ui.mainView.hidden = true;
+    ui.settingsView.hidden = true;
+    ui.payslipView.hidden = false;
+    ui.settingsBtn.classList.remove('active');
+    ui.settingsBtn.title = '设置';
+    ui.payslipBtn.classList.add('active');
+    setText(ui.headerTitle, '工资单');
+    window.salary.setView('payslip');
+    renderPayslip();
+  }
+
+  function closePayslip() {
+    if (view !== 'payslip') return;
+    view = 'widget';
+    ui.payslipView.hidden = true;
+    ui.mainView.hidden = false;
+    ui.payslipBtn.classList.remove('active');
+    setText(ui.headerTitle, '工资实时统计');
+    window.salary.setView('widget');
+  }
+
+  function renderPayslip() {
+    if (!ui.payslipMonth || !settings) return;
+    const now = new Date();
+    const match = /^(\d{4})-(\d{2})$/.exec(ui.payslipMonth.value);
+    let year = now.getFullYear();
+    let month = now.getMonth();
+    if (match) {
+      year = Number(match[1]);
+      month = Number(match[2]) - 1;
+    }
+    if (year > now.getFullYear() || (year === now.getFullYear() && month > now.getMonth())) {
+      year = now.getFullYear();
+      month = now.getMonth();
+    }
+    ui.payslipMonth.value = year + '-' + pad2(month + 1);
+    const lastDate = new Date(year, month + 1, 0);
+    const c = Calc.compute(new Date(year, month, lastDate.getDate(), 23, 59, 59), settings);
+    const isCurrent = year === now.getFullYear() && month === now.getMonth();
+
+    setText(ui.payslipHint,
+      year + '年' + (month + 1) + '月 · ' +
+      (isCurrent ? '当月预计工资单' : '工资单（按当前设置重算）'));
+    setText(ui.payslipFixed, '¥' + formatMoney(c.fixedMonthly));
+    setText(ui.payslipDailyLabel, '工作日日薪（' + c.monthlyWorkdays + ' 天）');
+    setText(ui.payslipDaily, '¥' + formatMoney(c.normalDailyAmount));
+    let overtimeLabel = '周末加班（' + c.monthOvertimeDays + ' 天';
+    if (c.monthCompOvertimeDays > 0) overtimeLabel += '，' + c.monthCompOvertimeDays + ' 天转调休';
+    overtimeLabel += '）';
+    setText(ui.payslipOvertimeLabel, overtimeLabel);
+    setText(ui.payslipOvertime, '¥' + formatMoney(c.monthOvertime));
+    setText(ui.payslipComp, c.monthCompDays + ' 天');
+    if (c.conversionEnabled) {
+      ui.payslipConversionRow.hidden = false;
+      setText(ui.payslipConversionLabel, '调休兑换（' + trimNumber(c.conversionHours) + ' 小时）');
+      setText(ui.payslipConversion, '¥' + formatMoney(c.conversionPay));
+    } else {
+      ui.payslipConversionRow.hidden = true;
+    }
+    setText(ui.payslipGross, '¥' + formatMoney(c.monthProjected));
+    setText(ui.payslipInsurance, '¥' + formatMoney(c.insuranceTotal));
+    setText(ui.payslipTax, '¥' + formatMoney(c.taxAmount));
+    setText(ui.payslipParty, '¥' + formatMoney(c.partyDues));
+    setText(ui.payslipNet, '¥' + formatMoney(c.netMonthly));
   }
 
   /* ----------------------------- 工具 ----------------------------- */

@@ -39,19 +39,19 @@ body {
 
 .widget {
   position: absolute;
-  inset: 8px;
+  inset: 6px;
   display: flex;
   flex-direction: column;
-  border-radius: 20px;
+  border-radius: 18px;
   background:
     radial-gradient(120% 80% at 100% 0%, rgba(16, 185, 129, 0.10), transparent 55%),
     radial-gradient(100% 70% at 0% 100%, rgba(34, 211, 238, 0.06), transparent 60%),
     linear-gradient(165deg, var(--bg-top), var(--bg-bottom));
-  border: 1px solid rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.55),
-    0 2px 8px rgba(0, 0, 0, 0.4),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 14px 34px rgba(0, 0, 0, 0.42),
+    0 2px 6px rgba(0, 0, 0, 0.32),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
 
@@ -121,6 +121,11 @@ body {
 .icon-btn.active {
   color: var(--emerald);
   background: rgba(52, 211, 153, 0.11);
+}
+
+.icon-btn.money-active {
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.14);
 }
 
 .icon-btn-quit:hover {
@@ -887,4 +892,412 @@ body {
 
 .btn.primary:hover {
   filter: brightness(1.06);
+}
+
+/* ------------------------------ 外观 / 自定义背景 ------------------------------ */
+
+.custom-bg,
+.bg-tint {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.custom-bg {
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+
+.bg-tint {
+  background: rgba(8, 10, 15, 0.42);
+}
+
+.widget.theme-light .bg-tint {
+  background: rgba(248, 250, 252, 0.55);
+}
+
+.titlebar,
+.view {
+  position: relative;
+  z-index: 1;
+}
+
+.bg-actions {
+  display: flex;
+  gap: 6px;
+  margin-left: auto;
+}
+
+.btn.mini {
+  flex: 0 0 auto;
+  width: auto;
+  height: 27px;
+  padding: 0 10px;
+  font-size: 9.5px;
+  border-radius: 7px;
+}
+
+.opacity-range {
+  width: 150px;
+  height: 4px;
+  margin: 0;
+  accent-color: var(--emerald);
+  cursor: pointer;
+}
+
+/* ------------------------------ 浅色主题 ------------------------------ */
+
+.widget.theme-light {
+  color-scheme: light;
+  --text: #0f172a;
+  --text-dim: #475569;
+  --text-faint: #94a3b8;
+  --line: rgba(15, 23, 42, 0.08);
+  --bg-top: #f8fafc;
+  --bg-bottom: #e2e8f0;
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(16, 185, 129, 0.08), transparent 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(34, 211, 238, 0.05), transparent 60%),
+    linear-gradient(165deg, var(--bg-top), var(--bg-bottom));
+  border-color: rgba(15, 23, 42, 0.08);
+  box-shadow:
+    0 12px 28px rgba(15, 23, 42, 0.16),
+    0 2px 6px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.widget.theme-light .title {
+  color: #0f172a;
+}
+
+.widget.theme-light .icon-btn {
+  color: #64748b;
+}
+
+.widget.theme-light .icon-btn:hover {
+  background: rgba(15, 23, 42, 0.07);
+  color: #0f172a;
+}
+
+.widget.theme-light .icon-btn.active {
+  color: #059669;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.widget.theme-light .icon-btn.money-active {
+  color: #b45309;
+  background: rgba(251, 191, 36, 0.18);
+}
+
+.widget.theme-light .amount-value {
+  background: linear-gradient(120deg, #4f46e5 0%, #6366f1 48%, #0891b2 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: drop-shadow(0 4px 14px rgba(99, 102, 241, 0.18));
+}
+
+.widget.theme-light .amount .currency {
+  color: #4f46e5;
+}
+
+.widget.theme-light.is-rest .amount-value {
+  background: linear-gradient(120deg, #64748b, #94a3b8);
+  -webkit-background-clip: text;
+  background-clip: text;
+  filter: none;
+}
+
+.widget.theme-light.is-rest .amount .currency {
+  color: #64748b;
+}
+
+.widget.theme-light.is-comp .amount-value {
+  background: linear-gradient(120deg, #2563eb, #60a5fa 55%, #0891b2);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.widget.theme-light.is-comp .amount .currency {
+  color: #2563eb;
+}
+
+.widget.theme-light.is-overtime .amount-value {
+  background: linear-gradient(120deg, #b45309, #f59e0b 55%, #d97706);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+.widget.theme-light.is-overtime .amount .currency {
+  color: #b45309;
+}
+
+.widget.theme-light .badge {
+  color: #047857;
+  background: rgba(16, 185, 129, 0.10);
+  border-color: rgba(16, 185, 129, 0.22);
+}
+
+.widget.theme-light .badge.badge-rest {
+  color: #64748b;
+  background: rgba(100, 116, 139, 0.08);
+  border-color: rgba(100, 116, 139, 0.16);
+}
+
+.widget.theme-light .badge.badge-comp {
+  color: #1d4ed8;
+  background: rgba(37, 99, 235, 0.10);
+  border-color: rgba(37, 99, 235, 0.22);
+}
+
+.widget.theme-light .progress,
+.widget.theme-light .mini-progress {
+  background: rgba(15, 23, 42, 0.08);
+}
+
+.widget.theme-light .card {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.06);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.widget.theme-light .card-tag {
+  color: #64748b;
+  background: rgba(15, 23, 42, 0.05);
+}
+
+.widget.theme-light .card-value {
+  color: #0f172a;
+}
+
+.widget.theme-light .card-sub,
+.widget.theme-light .progress-meta,
+.widget.theme-light .footer {
+  color: #94a3b8;
+}
+
+.widget.theme-light .progress-meta b {
+  color: #475569;
+}
+
+.widget.theme-light .mode-chip {
+  color: #475569;
+  border-color: rgba(15, 23, 42, 0.1);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.widget.theme-light .hero-label,
+.widget.theme-light .status-line {
+  color: #475569;
+}
+
+.widget.theme-light .hero-date {
+  color: #94a3b8;
+}
+
+.widget.theme-light .group {
+  background: rgba(255, 255, 255, 0.66);
+  border-color: rgba(15, 23, 42, 0.06);
+}
+
+.widget.theme-light .group h3 {
+  color: #64748b;
+}
+
+.widget.theme-light .switch-title {
+  color: #1e293b;
+}
+
+.widget.theme-light .switch-hint,
+.widget.theme-light .field-row .field-label em {
+  color: #94a3b8;
+}
+
+.widget.theme-light .input-box input[type="time"]::-webkit-calendar-picker-indicator,
+.widget.theme-light .input-box input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: none;
+  opacity: 0.55;
+}
+
+.widget.theme-light .input-box {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
+}
+
+.widget.theme-light .input-box:focus-within {
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.10);
+}
+
+.widget.theme-light .input-box input {
+  color: #0f172a;
+}
+
+.widget.theme-light .input-box .prefix,
+.widget.theme-light .input-box .suffix {
+  color: #94a3b8;
+}
+
+.widget.theme-light .mode-select {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(15, 23, 42, 0.12);
+  color: #0f172a;
+}
+
+.widget.theme-light .mode-select:focus {
+  border-color: rgba(16, 185, 129, 0.55);
+}
+
+.widget.theme-light .readonly-value {
+  color: #047857;
+}
+
+.widget.theme-light .switch {
+  background: rgba(15, 23, 42, 0.14);
+  border-color: rgba(15, 23, 42, 0.06);
+}
+
+.widget.theme-light .switch::after {
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.2);
+}
+
+.widget.theme-light .switch:checked {
+  background: #059669;
+  border-color: rgba(16, 185, 129, 0.45);
+}
+
+.widget.theme-light .preview {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.09), rgba(34, 211, 238, 0.04));
+  border-color: rgba(16, 185, 129, 0.16);
+}
+
+.widget.theme-light .preview-row {
+  color: #475569;
+}
+
+.widget.theme-light .preview-row b {
+  color: #047857;
+}
+
+.widget.theme-light .preview-note,
+.widget.theme-light .hint {
+  color: #94a3b8;
+}
+
+.widget.theme-light .btn.ghost {
+  background: rgba(255, 255, 255, 0.55);
+  border-color: rgba(15, 23, 42, 0.1);
+  color: #475569;
+}
+
+.widget.theme-light .btn.ghost:hover {
+  background: rgba(255, 255, 255, 0.9);
+  color: #0f172a;
+}
+
+.widget.theme-light .overtime-item {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(180, 83, 9, 0.16);
+  color: #92400e;
+}
+
+.widget.theme-light .overtime-date,
+.widget.theme-light .overtime-comp {
+  color: #b45309;
+}
+
+.widget.theme-light .overtime-rest {
+  color: #64748b;
+}
+
+.widget.theme-light .overtime-form .btn.add {
+  background: rgba(251, 191, 36, 0.2);
+  border-color: rgba(180, 83, 9, 0.25);
+  color: #92400e;
+}
+
+.widget.theme-light .settings-scroll::-webkit-scrollbar-thumb {
+  background: rgba(15, 23, 42, 0.18);
+}
+
+/* ------------------------------ 撒钱特效 ------------------------------ */
+
+.money-rain {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.money-particle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--coin-size, 18px);
+  height: var(--coin-size, 18px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: calc(var(--coin-size, 18px) * 0.56);
+  font-weight: 800;
+  line-height: 1;
+  color: #713f12;
+  background: radial-gradient(circle at 32% 26%, #fff7cc 0%, #fde68a 24%, #fbbf24 58%, #b45309 100%);
+  border: 1px solid rgba(120, 53, 15, 0.6);
+  box-shadow:
+    0 3px 9px rgba(80, 40, 0, 0.32),
+    inset 0 1px 1px rgba(255, 255, 255, 0.85);
+  will-change: transform, opacity;
+  animation-name: money-fall;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+.widget.theme-light .money-particle {
+  border-color: rgba(120, 53, 15, 0.7);
+  box-shadow:
+    0 3px 10px rgba(120, 53, 15, 0.35),
+    inset 0 1px 1px rgba(255, 255, 255, 0.9);
+}
+
+@keyframes money-fall {
+  0% {
+    transform: translate3d(0, -36px, 0) rotate(0deg);
+    opacity: 0;
+  }
+  8% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--drift, 0px), 460px, 0) rotate(var(--spin, 360deg));
+    opacity: 0;
+  }
+}
+
+/* ------------------------------ 工资单 ------------------------------ */
+
+.payslip-net {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.payslip-net b {
+  font-size: 14px;
+  color: #34d399;
+}
+
+.widget.theme-light .payslip-net {
+  border-top-color: rgba(15, 23, 42, 0.08);
+}
+
+.widget.theme-light .payslip-net b {
+  color: #047857;
 }

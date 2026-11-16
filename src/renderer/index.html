@@ -10,17 +10,35 @@
 </head>
 <body>
   <div class="widget" id="widget">
+    <div class="custom-bg" id="customBg" hidden></div>
+    <div class="bg-tint" id="bgTint" hidden></div>
     <header class="titlebar">
       <div class="brand">
         <span class="logo">¥</span>
         <span class="title" id="headerTitle">工资实时统计</span>
       </div>
       <div class="actions">
+        <button type="button" class="icon-btn" id="moneyBtn" title="整点撒钱特效（关）" aria-label="整点撒钱特效">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3l1.7 4.9L18.6 9.6l-4.9 1.7L12 16.2l-1.7-4.9L5.4 9.6l4.9-1.7L12 3z"></path>
+            <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8L19 15z"></path>
+          </svg>
+        </button>
         <button type="button" class="icon-btn" id="pinBtn" title="始终置顶" aria-label="始终置顶">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M12 17v5"></path>
             <path d="M9 3h6l-1 7 3 3v2H7v-2l3-3-1-7z"></path>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="payslipBtn" title="工资单" aria-label="工资单">
+          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+               stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M7 3h7l4 4v14H7z"></path>
+            <path d="M14 3v5h5"></path>
+            <path d="M9.5 13h5"></path>
+            <path d="M9.5 17h5"></path>
           </svg>
         </button>
         <button type="button" class="icon-btn" id="settingsBtn" title="设置" aria-label="设置">
@@ -36,7 +54,7 @@
             <path d="M5 12h14"></path>
           </svg>
         </button>
-        <button type="button" class="icon-btn icon-btn-quit" id="quitBtn" title="退出应用" aria-label="退出应用">
+        <button type="button" class="icon-btn icon-btn-quit" id="quitBtn" title="关闭到后台" aria-label="关闭到后台">
           <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
                stroke-width="2" stroke-linecap="round">
             <path d="M6 6l12 12"></path>
@@ -302,6 +320,39 @@
             <span class="switch-copy"><span class="switch-title">开机自启动</span></span>
             <input type="checkbox" class="switch" id="openAtLogin">
           </label>
+          <div class="field-row">
+            <span class="field-label">当前版本 <em id="currentVersion"></em></span>
+            <button type="button" class="btn mini ghost" id="updateCheckBtn">检查更新</button>
+          </div>
+          <label class="switch-row">
+            <span class="switch-copy"><span class="switch-title">每天自动检查更新</span></span>
+            <input type="checkbox" class="switch" id="autoUpdateCheck">
+          </label>
+          <p class="hint" id="updateStatus">联网时每天凌晨检查一次，仅提示新版本，不自动安装。</p>
+        </section>
+
+        <section class="group">
+          <h3>外观</h3>
+          <div class="field-row">
+            <span class="field-label">主题</span>
+            <select class="mode-select" id="themeSelect">
+              <option value="dark">深色</option>
+              <option value="light">浅色</option>
+            </select>
+          </div>
+          <div class="field-row">
+            <span class="field-label">自定义背景图</span>
+            <span class="bg-actions">
+              <button type="button" class="btn mini ghost" id="bgPickBtn">选择图片</button>
+              <button type="button" class="btn mini ghost" id="bgClearBtn">清除</button>
+            </span>
+            <input type="file" id="bgFileInput" accept="image/*" hidden>
+          </div>
+          <div class="field-row" id="bgOpacityRow" hidden>
+            <span class="field-label">背景不透明度 <em id="bgOpacityValue">55%</em></span>
+            <input type="range" id="bgOpacity" min="0" max="100" step="1" class="opacity-range">
+          </div>
+          <p class="hint">浅色主题适合浅色桌面；自定义背景图会压缩后保存在本地设置中。</p>
         </section>
 
         <section class="preview">
@@ -325,6 +376,47 @@
         <button type="button" class="btn primary" id="doneBtn">完成</button>
       </footer>
     </main>
+
+    <!-- 工资单 -->
+    <main class="view settings-view" id="payslipView" hidden>
+      <div class="settings-scroll">
+        <section class="group">
+          <h3>选择月份</h3>
+          <div class="field-row">
+            <span class="field-label">工资月份</span>
+            <span class="input-box">
+              <input id="payslipMonth" type="month" autocomplete="off">
+            </span>
+          </div>
+          <p class="hint" id="payslipHint">按本地保存的薪资设置与加班记录计算。</p>
+        </section>
+
+        <section class="preview payslip-preview">
+          <div class="preview-row"><span>固定月薪（基础 + 绩效）</span><b id="payslipFixed">¥0.00</b></div>
+          <div class="preview-row"><span id="payslipDailyLabel">工作日日薪</span><b id="payslipDaily">¥0.00</b></div>
+          <div class="preview-row"><span id="payslipOvertimeLabel">周末加班</span><b id="payslipOvertime">¥0.00</b></div>
+          <div class="preview-row"><span>本月调休合计</span><b id="payslipComp">1 天</b></div>
+          <div class="preview-row" id="payslipConversionRow" hidden><span id="payslipConversionLabel">调休兑换</span><b id="payslipConversion">¥0.00</b></div>
+          <div class="preview-row"><span>本月税前</span><b id="payslipGross">¥0.00</b></div>
+          <div class="preview-row"><span>五险一金（个人）</span><b id="payslipInsurance">¥0.00</b></div>
+          <div class="preview-row"><span>本月个税</span><b id="payslipTax">¥0.00</b></div>
+          <div class="preview-row"><span>党费</span><b id="payslipParty">¥0.00</b></div>
+          <div class="preview-row payslip-net"><span>本月到手</span><b id="payslipNet">¥0.00</b></div>
+        </section>
+
+        <section class="group">
+          <h3>说明</h3>
+          <p class="hint">工资单按本机保存的薪资设置与加班记录计算；修改设置后，历史月份会按当前设置重新计算，暂不做月度快照。</p>
+          <p class="hint">2027 年起按累计收入自动计算个税、以及「本月加班费次月发放」的规则尚未实现，当前个税仍按设置中的固定税率估算。</p>
+        </section>
+      </div>
+
+      <footer class="settings-footer">
+        <button type="button" class="btn ghost" id="payslipBackBtn">返回主界面</button>
+      </footer>
+    </main>
+
+    <div class="money-rain" id="moneyRain" hidden></div>
   </div>
 
   <script src="../shared/defaults.js"></script>

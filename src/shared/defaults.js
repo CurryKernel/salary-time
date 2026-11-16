@@ -37,6 +37,13 @@
     partyDues: 0,
     // 窗口 / 系统
     alwaysOnTop: true,
+    moneyEffect: false,
+    // 外观
+    theme: 'dark',
+    customBackground: '',
+    backgroundOpacity: 0.55,
+    // 每天自动检查更新（仅提示，不静默安装）
+    autoUpdateCheck: true,
     openAtLogin: false,
     windowBounds: null
   });

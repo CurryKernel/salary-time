@@ -20,11 +20,11 @@ const calc = require('../src/shared/calc.js');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'salary-time-test-')));
 
 let savedSettings = Object.assign({}, DEFAULT_SETTINGS);
-const calls = { saves: [], views: [], hidden: 0, quit: 0 };
+const calls = { saves: [], views: [], hidden: 0, quit: 0, updateOpened: '' };
 
 ipcMain.handle('app:get-state', () => ({
   settings: savedSettings,
-  version: 'test',
+  version: '1.0.0',
   platform: process.platform,
   packaged: false
 }));
@@ -43,6 +43,13 @@ ipcMain.handle('settings:reset', () => {
 ipcMain.on('window:set-view', (event, view) => calls.views.push(view));
 ipcMain.on('window:hide', () => { calls.hidden += 1; });
 ipcMain.on('window:quit', () => { calls.quit += 1; });
+ipcMain.handle('update:check', () => ({
+  current: '1.0.0',
+  latest: '1.1.0',
+  url: 'https://github.com/CurryKernel/salary-time/releases/tag/v1.1.0',
+  hasUpdate: true
+}));
+ipcMain.handle('update:open', (event, url) => { calls.updateOpened = url; return true; });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -87,6 +94,7 @@ async function main() {
     netAmount: document.getElementById('netAmount').textContent,
     netSub: document.getElementById('netSub').textContent,
     weekRemoved: document.getElementById('weekAmount') === null,
+    moneyActive: document.getElementById('moneyBtn').classList.contains('money-active'),
     settingsHidden: document.getElementById('settingsView').hidden
   })`);
   ok('默认显示本月调休 1 天', state.mode.includes('本月调休 1 天'), state.mode);
@@ -95,6 +103,29 @@ async function main() {
   ok('本月累计已渲染', /^¥[\d,]+\.\d{2}$/.test(state.monthly), state.monthly);
   ok('本月到手已渲染', /^¥[\d,]+\.\d{2}$/.test(state.netAmount), state.netAmount);
   ok('本周累计已移除', state.weekRemoved === true, state.netSub);
+  ok('撒钱特效默认关闭', state.moneyActive === false);
+
+  // 撒钱特效开关
+  await run(`document.getElementById('moneyBtn').click()`);
+  await sleep(400);
+  state = await run(`({
+    active: document.getElementById('moneyBtn').classList.contains('money-active'),
+    particles: document.querySelectorAll('#moneyRain .money-particle').length,
+    hidden: document.getElementById('moneyRain').hidden
+  })`);
+  ok('开启撒钱特效并产生粒子',
+    state.active === true && state.particles > 0 && state.hidden === false,
+    state.active + ' / ' + state.particles);
+  ok('撒钱设置已持久化', calls.saves.some((p) => p.moneyEffect === true));
+  await run(`document.getElementById('moneyBtn').click()`);
+  await sleep(200);
+  state = await run(`({
+    active: document.getElementById('moneyBtn').classList.contains('money-active'),
+    hidden: document.getElementById('moneyRain').hidden,
+    particles: document.querySelectorAll('#moneyRain .money-particle').length
+  })`);
+  ok('关闭撒钱特效并清除粒子',
+    state.active === false && state.hidden === true && state.particles === 0);
 
   // 打开设置
   await run(`document.getElementById('settingsBtn').click()`);
@@ -106,6 +137,8 @@ async function main() {
     housing: document.getElementById('housingFundValue').value,
     taxRate: document.getElementById('taxRate').value,
     insurancePreview: document.getElementById('insurancePreview').textContent,
+    version: document.getElementById('currentVersion').textContent,
+    autoUpdate: document.getElementById('autoUpdateCheck').checked,
     rest1Start: document.getElementById('overtimeRest1Start').value,
     rest1End: document.getElementById('overtimeRest1End').value,
     rest2Start: document.getElementById('overtimeRest2Start').value,
@@ -119,6 +152,9 @@ async function main() {
   ok('五险一金默认合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
   ok('党费默认 0', state.partyDues === '0', state.partyDues);
   ok('个税默认税率 10%', state.taxRate === '10', state.taxRate);
+  ok('显示当前版本且默认自动检查更新',
+    state.version === 'v1.0.0' && state.autoUpdate === true,
+    state.version + ' / ' + state.autoUpdate);
   ok('加班休息时段默认 12:00–13:30、18:00–18:30',
     state.rest1Start === '12:00' && state.rest1End === '13:30' &&
     state.rest2Start === '18:00' && state.rest2End === '18:30');
@@ -155,6 +191,108 @@ async function main() {
   ok('党费从本月到手扣除', Math.abs((netBeforeParty - netAfterParty) - 200) < 0.01,
     netBeforeParty + ' -> ' + netAfterParty);
   ok('设置已持久化（党费）', calls.saves.some((p) => p.partyDues === 200));
+
+  // 检查更新
+  await run(`document.getElementById('updateCheckBtn').click()`);
+  await sleep(400);
+  state = await run(`({
+    status: document.getElementById('updateStatus').textContent,
+    button: document.getElementById('updateCheckBtn').textContent
+  })`);
+  ok('检查更新发现新版本',
+    state.status.includes('1.1.0') && state.button.includes('去下载'), state.status + ' / ' + state.button);
+  await run(`document.getElementById('updateCheckBtn').click()`);
+  await sleep(200);
+  ok('打开新版本 Release 页面', calls.updateOpened.includes('v1.1.0'), calls.updateOpened);
+
+  await run(`(() => {
+    const input = document.getElementById('autoUpdateCheck');
+    input.checked = false;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(400);
+  ok('可关闭每天自动检查更新',
+    calls.saves.some((p) => p.autoUpdateCheck === false));
+
+  // 主题与自定义背景
+  state = await run(`({
+    theme: document.getElementById('themeSelect').value,
+    light: document.getElementById('widget').classList.contains('theme-light'),
+    bgHidden: document.getElementById('customBg').hidden,
+    opacityHidden: document.getElementById('bgOpacityRow').hidden
+  })`);
+  ok('默认深色主题且无自定义背景',
+    state.theme === 'dark' && state.light === false && state.bgHidden === true &&
+    state.opacityHidden === true);
+
+  await run(`(() => {
+    const select = document.getElementById('themeSelect');
+    select.value = 'light';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(700);
+  state = await run(`document.getElementById('widget').classList.contains('theme-light')`);
+  ok('切换浅色主题', state === true);
+  ok('主题设置已持久化', calls.saves.some((p) => p.theme === 'light'));
+
+  await run(`(async () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = 8;
+    canvas.height = 8;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#ff0000';
+    context.fillRect(0, 0, 8, 8);
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+    const file = new File([blob], 'background.png', { type: 'image/png' });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    const input = document.getElementById('bgFileInput');
+    input.files = transfer.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(1200);
+  state = await run(`({
+    bgHidden: document.getElementById('customBg').hidden,
+    tintHidden: document.getElementById('bgTint').hidden,
+    opacityHidden: document.getElementById('bgOpacityRow').hidden,
+    hasImage: document.getElementById('customBg').style.backgroundImage.includes('data:image')
+  })`);
+  ok('上传自定义背景图',
+    state.bgHidden === false && state.tintHidden === false &&
+    state.opacityHidden === false && state.hasImage === true);
+  ok('自定义背景已持久化',
+    calls.saves.some((p) => typeof p.customBackground === 'string' &&
+      p.customBackground.startsWith('data:image')));
+
+  await run(`(() => {
+    const range = document.getElementById('bgOpacity');
+    range.value = '30';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  await sleep(400);
+  state = await run(`({
+    opacity: document.getElementById('customBg').style.opacity,
+    label: document.getElementById('bgOpacityValue').textContent
+  })`);
+  ok('背景透明度可调',
+    state.opacity === '0.3' && state.label === '30%',
+    state.opacity + ' / ' + state.label);
+  ok('透明度设置已持久化', calls.saves.some((p) => p.backgroundOpacity === 0.3));
+
+  await run(`document.getElementById('bgClearBtn').click()`);
+  await sleep(300);
+  state = await run(`({
+    bgHidden: document.getElementById('customBg').hidden,
+    opacityHidden: document.getElementById('bgOpacityRow').hidden
+  })`);
+  ok('清除自定义背景', state.bgHidden === true && state.opacityHidden === true);
+
+  await run(`(() => {
+    const select = document.getElementById('themeSelect');
+    select.value = 'dark';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(300);
 
   // 本月兑换配额
   state = await run(`({
@@ -240,6 +378,50 @@ async function main() {
   await sleep(150);
   state = await run(`document.getElementById('settingsView').hidden`);
   ok('Esc 关闭设置页', state === true);
+
+  // 工资单页
+  await run(`document.getElementById('payslipBtn').click()`);
+  await sleep(250);
+  state = await run(`({
+    visible: document.getElementById('payslipView').hidden === false,
+    mainHidden: document.getElementById('mainView').hidden,
+    title: document.getElementById('headerTitle').textContent,
+    month: document.getElementById('payslipMonth').value,
+    hint: document.getElementById('payslipHint').textContent,
+    net: document.getElementById('payslipNet').textContent
+  })`);
+  const currentMonthValue = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+  ok('打开工资单页', state.visible === true && state.mainHidden === true && state.title === '工资单');
+  ok('工资单默认当前月份', state.month === currentMonthValue && state.hint.includes('当月预计'), state.month);
+  ok('工资单显示本月到手', /^¥[\d,]+\.\d{2}$/.test(state.net), state.net);
+
+  const previousMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const previousMonthValue = previousMonthDate.getFullYear() + '-' +
+    String(previousMonthDate.getMonth() + 1).padStart(2, '0');
+  await run(`(() => {
+    const input = document.getElementById('payslipMonth');
+    input.value = '${previousMonthValue}';
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(250);
+  state = await run(`({
+    hint: document.getElementById('payslipHint').textContent,
+    net: document.getElementById('payslipNet').textContent
+  })`);
+  ok('工资单可切换历史月份',
+    state.hint.includes(previousMonthDate.getFullYear() + '年' + (previousMonthDate.getMonth() + 1) + '月'),
+    state.hint);
+  ok('历史月份工资单已渲染', /^¥[\d,]+\.\d{2}$/.test(state.net), state.net);
+
+  await run(`document.getElementById('payslipBackBtn').click()`);
+  await sleep(200);
+  state = await run(`({
+    hidden: document.getElementById('payslipView').hidden,
+    mainHidden: document.getElementById('mainView').hidden,
+    title: document.getElementById('headerTitle').textContent
+  })`);
+  ok('工资单返回主界面',
+    state.hidden === true && state.mainHidden === false && state.title === '工资实时统计');
 
   // 周末加班：添加与删除
   const today = new Date();
@@ -373,7 +555,7 @@ async function main() {
 
   await run(`document.getElementById('quitBtn').click()`);
   await sleep(120);
-  ok('点击 × 退出应用', calls.quit === 1);
+  ok('点击 × 仅关闭到后台，不退出进程', calls.hidden === 2 && calls.quit === 0);
 
   // 恢复默认
   await run(`document.getElementById('settingsBtn').click()`);
@@ -389,6 +571,9 @@ async function main() {
     partyDues: document.getElementById('partyDues').value,
     conversion: document.getElementById('compConversionEnabled').value,
     conversionHidden: document.getElementById('compConversionHoursRow').hidden,
+    theme: document.getElementById('themeSelect').value,
+    bgHidden: document.getElementById('customBg').hidden,
+    autoUpdate: document.getElementById('autoUpdateCheck').checked,
     insurancePreview: document.getElementById('insurancePreview').textContent
   })`);
   ok('恢复默认后基础工资为 20000', state.base === '20000', state.base);
@@ -400,6 +585,9 @@ async function main() {
   ok('恢复默认后党费为 0', state.partyDues === '0', state.partyDues);
   ok('恢复默认后本月兑换配额为不兑换',
     state.conversion === 'no' && state.conversionHidden === true);
+  ok('恢复默认后为深色主题且无背景',
+    state.theme === 'dark' && state.bgHidden === true);
+  ok('恢复默认后每天自动检查更新开启', state.autoUpdate === true);
   ok('恢复默认后五险一金合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
 
   window.destroy();
