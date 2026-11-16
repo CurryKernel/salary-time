@@ -54,6 +54,7 @@
     quitBtn: $('quitBtn'),
     moneyBtn: $('moneyBtn'),
     moneyRain: $('moneyRain'),
+    moneyCanvas: $('moneyCanvas'),
     customBg: $('customBg'),
     bgTint: $('bgTint'),
     themeSelect: $('themeSelect'),
@@ -139,7 +140,13 @@
   let settingsGeneration = 0;
   let saveTimer = null;
   let tickTimer = null;
-  let moneyTimer = null;
+  let moneyAnimation = null;
+  let moneyParticles = [];
+  let moneyCtx = null;
+  let moneyStart = 0;
+  let moneyLast = 0;
+  let moneyWidth = 0;
+  let moneyHeight = 0;
   let lastHour = null;
   let appVersion = '';
   let updateUrl = '';
@@ -1109,34 +1116,128 @@
   /* ----------------------------- 撒钱特效 ----------------------------- */
 
   function triggerMoneyRain() {
-    if (!ui.moneyRain) return;
-    clearTimeout(moneyTimer);
-    ui.moneyRain.textContent = '';
+    if (!ui.moneyRain || !ui.moneyCanvas) return;
+    cancelAnimationFrame(moneyAnimation);
+    moneyAnimation = null;
+    moneyParticles = [];
     ui.moneyRain.hidden = false;
-    const count = 36;
+    ui.moneyRain.dataset.active = '1';
+
+    const rect = ui.moneyRain.getBoundingClientRect();
+    const width = Math.max(1, Math.round(rect.width));
+    const height = Math.max(1, Math.round(rect.height));
+    const dpr = window.devicePixelRatio || 1;
+    const canvas = ui.moneyCanvas;
+    canvas.width = Math.round(width * dpr);
+    canvas.height = Math.round(height * dpr);
+    canvas.style.width = width + 'px';
+    canvas.style.height = height + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    moneyCtx = ctx;
+    moneyWidth = width;
+    moneyHeight = height;
+
+    const count = 34;
     for (let index = 0; index < count; index++) {
-      const particle = document.createElement('span');
-      particle.className = 'money-particle';
-      particle.textContent = '¥';
-      const size = 14 + Math.random() * 14;
-      particle.style.left = (2 + Math.random() * 94) + '%';
-      particle.style.top = '0';
-      particle.style.setProperty('--coin-size', size.toFixed(1) + 'px');
-      particle.style.animationDelay = (Math.random() * 1.2).toFixed(2) + 's';
-      particle.style.animationDuration = (1.6 + Math.random() * 1.5).toFixed(2) + 's';
-      particle.style.setProperty('--drift', ((Math.random() * 2 - 1) * 34).toFixed(1) + 'px');
-      particle.style.setProperty('--spin', (180 + Math.random() * 720).toFixed(0) + 'deg');
-      ui.moneyRain.appendChild(particle);
+      const size = 9 + Math.random() * 14;
+      moneyParticles.push({
+        x: Math.random() * width,
+        y: -size - Math.random() * 60,
+        vx: (Math.random() * 2 - 1) * 45,
+        vy: 20 + Math.random() * 70,
+        gravity: 260 + Math.random() * 180,
+        size,
+        rot: Math.random() * Math.PI * 2,
+        vr: (Math.random() * 2 - 1) * 4.5,
+        delay: Math.random() * 1.9,
+        swayPhase: Math.random() * Math.PI * 2,
+        swayAmp: 6 + Math.random() * 18,
+        swayFreq: 1.1 + Math.random() * 1.6,
+        alpha: 1
+      });
     }
-    moneyTimer = setTimeout(clearMoneyRain, 4200);
+
+    moneyStart = performance.now();
+    moneyLast = moneyStart;
+    moneyAnimation = requestAnimationFrame(stepMoneyRain);
+  }
+
+  function stepMoneyRain(now) {
+    if (!moneyCtx) return;
+    const elapsed = (now - moneyStart) / 1000;
+    const dt = Math.min(0.05, Math.max(0, (now - moneyLast) / 1000));
+    moneyLast = now;
+    const ctx = moneyCtx;
+    ctx.clearRect(0, 0, moneyWidth, moneyHeight);
+
+    for (const particle of moneyParticles) {
+      if (elapsed < particle.delay) continue;
+      particle.vy += particle.gravity * dt;
+      const sway = Math.sin(elapsed * particle.swayFreq + particle.swayPhase) * particle.swayAmp;
+      particle.x += (particle.vx + sway) * dt;
+      particle.y += particle.vy * dt;
+      particle.rot += particle.vr * dt;
+      particle.vx *= (1 - 0.35 * dt);
+
+      const fadeIn = Math.min(1, Math.max(0, (elapsed - particle.delay) / 0.15));
+      const fadeOut = particle.y > moneyHeight * 0.68
+        ? Math.max(0, 1 - (particle.y - moneyHeight * 0.68) / (moneyHeight * 0.42))
+        : 1;
+      particle.alpha = Math.min(fadeIn, fadeOut);
+      if (particle.alpha > 0 && particle.y < moneyHeight + particle.size * 2) {
+        drawCoin(ctx, particle);
+      }
+    }
+
+    moneyParticles = moneyParticles.filter((particle) =>
+      particle.y < moneyHeight + particle.size * 2 && particle.alpha > 0);
+
+    if (elapsed > 5.6 || (elapsed > 2.2 && moneyParticles.length === 0)) {
+      clearMoneyRain();
+      return;
+    }
+    moneyAnimation = requestAnimationFrame(stepMoneyRain);
+  }
+
+  function drawCoin(ctx, particle) {
+    const radius = particle.size / 2;
+    ctx.save();
+    ctx.globalAlpha = particle.alpha;
+    ctx.translate(particle.x, particle.y);
+    ctx.rotate(particle.rot);
+    const gradient = ctx.createRadialGradient(
+      -radius * 0.35, -radius * 0.35, radius * 0.12,
+      0, 0, radius
+    );
+    gradient.addColorStop(0, '#fff9db');
+    gradient.addColorStop(0.28, '#fde68a');
+    gradient.addColorStop(0.65, '#fbbf24');
+    gradient.addColorStop(1, '#b45309');
+    ctx.beginPath();
+    ctx.arc(0, 0, radius, 0, Math.PI * 2);
+    ctx.fillStyle = gradient;
+    ctx.fill();
+    ctx.lineWidth = Math.max(1, radius * 0.1);
+    ctx.strokeStyle = 'rgba(120, 53, 15, 0.7)';
+    ctx.stroke();
+    ctx.fillStyle = '#713f12';
+    ctx.font = '800 ' + Math.max(7, radius * 0.95) +
+      'px -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('¥', 0, radius * 0.04);
+    ctx.restore();
   }
 
   function clearMoneyRain() {
-    clearTimeout(moneyTimer);
-    moneyTimer = null;
+    cancelAnimationFrame(moneyAnimation);
+    moneyAnimation = null;
+    moneyParticles = [];
+    moneyCtx = null;
     if (!ui.moneyRain) return;
     ui.moneyRain.hidden = true;
-    ui.moneyRain.textContent = '';
+    ui.moneyRain.dataset.active = '0';
   }
 
   /* ----------------------------- 视图 ----------------------------- */

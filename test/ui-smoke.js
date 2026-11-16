@@ -110,22 +110,24 @@ async function main() {
   await sleep(400);
   state = await run(`({
     active: document.getElementById('moneyBtn').classList.contains('money-active'),
-    particles: document.querySelectorAll('#moneyRain .money-particle').length,
-    hidden: document.getElementById('moneyRain').hidden
+    rainActive: document.getElementById('moneyRain').dataset.active,
+    hidden: document.getElementById('moneyRain').hidden,
+    canvasWidth: document.getElementById('moneyCanvas').width
   })`);
-  ok('开启撒钱特效并产生粒子',
-    state.active === true && state.particles > 0 && state.hidden === false,
-    state.active + ' / ' + state.particles);
+  ok('开启撒钱特效并启动画布动画',
+    state.active === true && state.rainActive === '1' && state.hidden === false &&
+    state.canvasWidth > 0,
+    state.active + ' / ' + state.rainActive + ' / ' + state.canvasWidth);
   ok('撒钱设置已持久化', calls.saves.some((p) => p.moneyEffect === true));
   await run(`document.getElementById('moneyBtn').click()`);
   await sleep(200);
   state = await run(`({
     active: document.getElementById('moneyBtn').classList.contains('money-active'),
     hidden: document.getElementById('moneyRain').hidden,
-    particles: document.querySelectorAll('#moneyRain .money-particle').length
+    rainActive: document.getElementById('moneyRain').dataset.active
   })`);
-  ok('关闭撒钱特效并清除粒子',
-    state.active === false && state.hidden === true && state.particles === 0);
+  ok('关闭撒钱特效并停止动画',
+    state.active === false && state.hidden === true && state.rainActive === '0');
 
   // 打开设置
   await run(`document.getElementById('settingsBtn').click()`);
