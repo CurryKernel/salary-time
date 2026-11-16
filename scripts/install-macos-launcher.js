@@ -56,8 +56,15 @@ fs.mkdirSync(buildDir, { recursive: true });
 
 // 1. AppleScript：通过 LaunchServices 启动 Electron 官方签名的运行时，并加载本项目。
 //    直接执行未签名的应用包会被部分 macOS 版本拦截，而 Electron.app 本身带官方签名。
-// 已在运行时，Electron 的单实例机制会触发 second-instance 并唤回窗口
+// 若已有实例，先结束旧进程再启动，保证从启动台打开时一定有窗口
+const runningPattern = electronBinary + ' ' + REPO + '$';
 const command = [
+  `PID=$(/usr/bin/pgrep -f ${shellQuote(runningPattern)} | /usr/bin/head -n 1);`,
+  'if [ -n "$PID" ]; then',
+  '/bin/kill -TERM "$PID";',
+  '/bin/sleep 2;',
+  '/bin/kill -KILL "$PID" >/dev/null 2>&1;',
+  'fi;',
   '/usr/bin/env -u ELECTRON_RUN_AS_NODE',
   '/usr/bin/open -n',
   '-a ' + shellQuote(electronApp),

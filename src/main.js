@@ -41,11 +41,30 @@ function debugLog(message) {
   } catch (error) { /* ignore */ }
 }
 
+function ensureWindowOnCursorDisplay() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const cursor = screen.getCursorScreenPoint();
+  const display = screen.getDisplayNearestPoint(cursor);
+  const area = display.workArea;
+  const bounds = mainWindow.getBounds();
+  const intersects = bounds.x < area.x + area.width && bounds.x + bounds.width > area.x &&
+    bounds.y < area.y + area.height && bounds.y + bounds.height > area.y;
+  if (!intersects) {
+    const x = area.x + area.width - bounds.width - 16;
+    const y = area.y + area.height - bounds.height - 16;
+    mainWindow.setBounds({ x, y, width: bounds.width, height: bounds.height });
+    settings.windowBounds = { x, y };
+    persistSettingsDebounced();
+  }
+}
+
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
+  ensureWindowOnCursorDisplay();
   mainWindow.show();
   mainWindow.focus();
+  mainWindow.moveTop();
   if (isMac && app.focus) {
     try { app.focus({ steal: true }); } catch (error) { /* ignore */ }
   }
@@ -531,6 +550,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     debugLog('ready-to-show');
+    ensureWindowOnCursorDisplay();
     mainWindow.show();
     if (settings.alwaysOnTop) mainWindow.setAlwaysOnTop(true, 'floating');
   });
