@@ -42,8 +42,9 @@
     theme: 'dark',
     customBackground: '',
     backgroundOpacity: 0.55,
-    // 每天自动检查更新（仅提示，不静默安装）
+    // 每天自动检查更新；autoInstallUpdates 为 true 时在凌晨静默安装
     autoUpdateCheck: true,
+    autoInstallUpdates: true,
     openAtLogin: false,
     windowBounds: null
   });

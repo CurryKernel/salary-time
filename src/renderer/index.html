@@ -328,7 +328,14 @@
             <span class="switch-copy"><span class="switch-title">每天自动检查更新</span></span>
             <input type="checkbox" class="switch" id="autoUpdateCheck">
           </label>
-          <p class="hint" id="updateStatus">联网时每天凌晨检查一次，仅提示新版本，不自动安装。</p>
+          <label class="switch-row">
+            <span class="switch-copy">
+              <span class="switch-title">静默自动安装更新</span>
+              <span class="switch-hint">凌晨发现新版本后自动下载、安装并重启</span>
+            </span>
+            <input type="checkbox" class="switch" id="autoInstallUpdates">
+          </label>
+          <p class="hint" id="updateStatus">联网时每天凌晨检查一次；开启静默安装后会自动更新并重启。</p>
         </section>
 
         <section class="group">

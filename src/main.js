@@ -1,8 +1,13 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, Tray, Menu, nativeImage, screen, shell, Notification } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
+const crypto = require('node:crypto');
+const { execFileSync, spawn } = require('node:child_process');
+const { Readable } = require('node:stream');
+const { pipeline } = require('node:stream/promises');
 const { DEFAULT_SETTINGS } = require('./shared/defaults.js');
 
 const WIDGET_SIZE = { width: 400, height: 322 };
@@ -36,6 +41,17 @@ function debugLog(message) {
   } catch (error) { /* ignore */ }
 }
 
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  if (isMac && app.focus) {
+    try { app.focus({ steal: true }); } catch (error) { /* ignore */ }
+  }
+}
+
+
 app.setAppUserModelId('com.currykernel.salarytime');
 debugLog('main loaded');
 
@@ -46,12 +62,7 @@ if (!hasSingleInstanceLock) {
   debugLog('quitting: no single instance lock');
   app.quit();
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return;
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
-  });
+  app.on('second-instance', showMainWindow);
 
   app.whenReady().then(() => {
     debugLog('app ready');
@@ -80,9 +91,7 @@ app.on('window-all-closed', () => {
   if (!isMac) app.quit();
 });
 
-app.on('activate', () => {
-  if (mainWindow) mainWindow.show();
-});
+app.on('activate', showMainWindow);
 
 /* ------------------------------------------------------------------ */
 /* 设置读写                                                             */
@@ -165,6 +174,7 @@ function sanitizeSettings(input) {
   s.customBackground = sanitizeBackground(source.customBackground);
   s.backgroundOpacity = clamp(source.backgroundOpacity, 0, 1, 0.55);
   s.autoUpdateCheck = source.autoUpdateCheck !== false;
+  s.autoInstallUpdates = source.autoInstallUpdates !== false;
   s.openAtLogin = !!source.openAtLogin;
 
   const bounds = source.windowBounds;
@@ -244,6 +254,145 @@ function compareVersions(a, b) {
     if (l !== r) return l - r;
   }
   return 0;
+}
+
+const GITHUB_RELEASE_API = 'https://api.github.com/repos/CurryKernel/salary-time';
+
+async function fetchLatestRelease() {
+  const response = await fetch(GITHUB_RELEASE_API + '/releases/latest', {
+    headers: {
+      'User-Agent': 'salary-time',
+      'Accept': 'application/vnd.github+json'
+    },
+    signal: AbortSignal.timeout(10000)
+  });
+  if (!response.ok) throw new Error('GitHub HTTP ' + response.status);
+  return response.json();
+}
+
+async function downloadFile(url, destination) {
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'salary-time' },
+    redirect: 'follow',
+    signal: AbortSignal.timeout(300000)
+  });
+  if (!response.ok || !response.body) {
+    throw new Error('下载失败 HTTP ' + response.status);
+  }
+  await fs.promises.mkdir(path.dirname(destination), { recursive: true });
+  await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(destination));
+}
+
+function sha256File(file) {
+  return new Promise((resolve, reject) => {
+    const hash = crypto.createHash('sha256');
+    const stream = fs.createReadStream(file);
+    stream.on('data', (chunk) => hash.update(chunk));
+    stream.on('end', () => resolve(hash.digest('hex')));
+    stream.on('error', reject);
+  });
+}
+
+function checksumFor(text, fileName) {
+  for (const line of String(text || '').split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts.length >= 2 && parts[parts.length - 1] === fileName) {
+      return parts[0].toLowerCase();
+    }
+  }
+  return '';
+}
+
+async function installWindowsUpdate() {
+  const release = await fetchLatestRelease();
+  const version = String(release.tag_name || '').replace(/^v/, '');
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  const portableTarget = process.env.PORTABLE_EXECUTABLE_FILE || '';
+  const expectedName = portableTarget
+    ? 'SalaryTime-Portable-' + version + '.exe'
+    : 'SalaryTime-Setup-' + version + '.exe';
+  const asset = assets.find((item) => item.name === expectedName) ||
+    assets.find((item) => portableTarget
+      ? /^SalaryTime-Portable-.*\.exe$/i.test(item.name)
+      : /^SalaryTime-Setup-.*\.exe$/i.test(item.name));
+  if (!asset) return { error: '发布包中找不到对应的 Windows 安装包' };
+
+  const checksumAsset = assets.find((item) => /^SHA256SUMS-.*\.txt$/i.test(item.name));
+  if (!checksumAsset) return { error: '发布包中找不到校验和文件' };
+
+  const checksumResponse = await fetch(checksumAsset.browser_download_url, {
+    headers: { 'User-Agent': 'salary-time' },
+    signal: AbortSignal.timeout(30000)
+  });
+  if (!checksumResponse.ok) throw new Error('校验和下载失败 HTTP ' + checksumResponse.status);
+  const expected = checksumFor(await checksumResponse.text(), asset.name);
+  if (!expected) return { error: '校验和文件中找不到安装包记录' };
+
+  const tempDir = path.join(os.tmpdir(), 'salary-time-update');
+  const downloaded = path.join(tempDir, asset.name);
+  await downloadFile(asset.browser_download_url, downloaded);
+  const actual = await sha256File(downloaded);
+  if (actual !== expected) {
+    try { fs.unlinkSync(downloaded); } catch (error) { /* ignore */ }
+    return { error: '安装包 SHA-256 校验失败，已取消更新' };
+  }
+
+  const targetExe = portableTarget || process.execPath;
+  const installDir = portableTarget ? '' : path.dirname(process.execPath);
+  const helper = path.join(tempDir, 'install-update.cmd');
+  const lines = [
+    '@echo off',
+    'ping 127.0.0.1 -n 4 >nul'
+  ];
+  if (portableTarget) {
+    lines.push('copy /Y "' + downloaded + '" "' + targetExe + '" >nul');
+    lines.push('start "" "' + targetExe + '"');
+  } else {
+    // NSIS 静默安装；/D 必须是最后一个参数，路径不加引号
+    lines.push('start "" /wait "' + downloaded + '" /S /D=' + installDir);
+    lines.push('start "" "' + targetExe + '"');
+  }
+  lines.push('del "%~f0"');
+  fs.writeFileSync(helper, lines.join('\r\n'), 'utf8');
+
+  const child = spawn('cmd.exe', ['/c', helper], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  });
+  child.unref();
+  setTimeout(() => {
+    isQuitting = true;
+    app.quit();
+  }, 800);
+  return { ok: true, version };
+}
+
+async function installSourceUpdate() {
+  const repo = path.resolve(__dirname, '..');
+  const git = (args) => execFileSync('git', args, {
+    cwd: repo,
+    encoding: 'utf8',
+    timeout: 120000
+  }).trim();
+
+  try {
+    if (git(['status', '--porcelain'])) {
+      return { error: '本地有未提交修改，已跳过自动更新' };
+    }
+    git(['fetch', 'origin', '--quiet']);
+    const behind = Number(git(['rev-list', '--count', 'HEAD..origin/main']));
+    if (!behind || behind <= 0) return { error: '当前源码已是最新' };
+    git(['pull', '--ff-only', 'origin', 'main']);
+  } catch (error) {
+    return { error: '源码更新失败：' + (error && error.message ? error.message : 'git error') };
+  }
+
+  setTimeout(() => {
+    app.relaunch();
+    app.exit(0);
+  }, 600);
+  return { ok: true, source: true };
 }
 
 function sanitizeBackground(value) {
@@ -544,20 +693,7 @@ function registerIpc() {
   ipcMain.handle('update:check', async () => {
     const current = app.getVersion();
     try {
-      const response = await fetch(
-        'https://api.github.com/repos/CurryKernel/salary-time/releases/latest',
-        {
-          headers: {
-            'User-Agent': 'salary-time',
-            'Accept': 'application/vnd.github+json'
-          },
-          signal: AbortSignal.timeout(8000)
-        }
-      );
-      if (!response.ok) {
-        return { current, error: 'HTTP ' + response.status };
-      }
-      const data = await response.json();
+      const data = await fetchLatestRelease();
       const latest = String(data.tag_name || '').replace(/^v/, '');
       return {
         current,
@@ -567,6 +703,21 @@ function registerIpc() {
       };
     } catch (error) {
       return { current, error: error && error.message ? error.message : 'network error' };
+    }
+  });
+
+  ipcMain.handle('update:install', async () => {
+    try {
+      if (process.platform === 'win32' && app.isPackaged) {
+        return await installWindowsUpdate();
+      }
+      if (process.platform === 'darwin' && !app.isPackaged) {
+        return await installSourceUpdate();
+      }
+      return { error: '当前安装方式不支持静默更新，请手动下载安装包' };
+    } catch (error) {
+      console.error('静默更新失败:', error);
+      return { error: error && error.message ? error.message : '更新失败' };
     }
   });
 
@@ -591,6 +742,17 @@ function registerIpc() {
         });
       } catch (error) {
         // 部分 Windows 环境不支持气泡提示，忽略即可
+      }
+    }
+    if (process.platform === 'darwin' && !hideNoticeShown) {
+      hideNoticeShown = true;
+      try {
+        new Notification({
+          title: '工资实时统计',
+          body: '已隐藏到菜单栏，点击菜单栏的 ¥ 图标或重新打开启动器即可恢复。'
+        }).show();
+      } catch (error) {
+        // 未签名的开发版本可能不显示通知，忽略即可
       }
     }
   });

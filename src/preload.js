@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('salary', {
   quit: () => ipcRenderer.send('window:quit'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   openUpdate: (url) => ipcRenderer.invoke('update:open', url),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
   onSettingsUpdated: (callback) => {
     const listener = (event, value) => callback(value);
     ipcRenderer.on('settings:updated', listener);

@@ -105,6 +105,7 @@
     openAtLoginRow: $('openAtLoginRow'),
     updateCheckBtn: $('updateCheckBtn'),
     autoUpdateCheck: $('autoUpdateCheck'),
+    autoInstallUpdates: $('autoInstallUpdates'),
     updateStatus: $('updateStatus'),
     currentVersion: $('currentVersion'),
     previewDaily: $('previewDaily'),
@@ -400,6 +401,7 @@
     ui.alwaysOnTop.checked = !!settings.alwaysOnTop;
     ui.openAtLogin.checked = !!settings.openAtLogin;
     ui.autoUpdateCheck.checked = settings.autoUpdateCheck !== false;
+    ui.autoInstallUpdates.checked = settings.autoInstallUpdates !== false;
     setText(ui.currentVersion, appVersion ? 'v' + appVersion : '');
 
     const insurance = settings.insurance || {};
@@ -501,6 +503,9 @@
     ui.autoUpdateCheck.addEventListener('change', () => {
       commit({ autoUpdateCheck: ui.autoUpdateCheck.checked }, { refresh: true });
       scheduleAutoUpdateCheck();
+    });
+    ui.autoInstallUpdates.addEventListener('change', () => {
+      commit({ autoInstallUpdates: ui.autoInstallUpdates.checked }, { refresh: true });
     });
 
     ui.overtimeAddBtn.addEventListener('click', addOvertimeDay);
@@ -616,6 +621,18 @@
         setText(ui.updateStatus,
           '发现新版本 v' + result.latest + '（当前 v' + result.current +
           '），点击「去下载」打开 Release 页面。');
+        if (auto && settings.autoInstallUpdates) {
+          setText(ui.updateStatus,
+            '发现新版本 v' + result.latest + '，正在静默更新…');
+          const install = await window.salary.installUpdate();
+          if (install && install.ok) {
+            setText(ui.updateStatus, '正在安装更新，应用即将重启…');
+          } else {
+            setText(ui.updateStatus,
+              '静默更新失败：' + ((install && install.error) || '未知错误') +
+              '，可点击「去下载」手动安装。');
+          }
+        }
       } else {
         updateUrl = '';
         ui.updateCheckBtn.textContent = '检查更新';

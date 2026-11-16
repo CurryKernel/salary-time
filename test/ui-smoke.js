@@ -20,7 +20,7 @@ const calc = require('../src/shared/calc.js');
 app.setPath('userData', fs.mkdtempSync(path.join(os.tmpdir(), 'salary-time-test-')));
 
 let savedSettings = Object.assign({}, DEFAULT_SETTINGS);
-const calls = { saves: [], views: [], hidden: 0, quit: 0, updateOpened: '' };
+const calls = { saves: [], views: [], hidden: 0, quit: 0, updateOpened: '', updateInstalls: 0 };
 
 ipcMain.handle('app:get-state', () => ({
   settings: savedSettings,
@@ -50,6 +50,7 @@ ipcMain.handle('update:check', () => ({
   hasUpdate: true
 }));
 ipcMain.handle('update:open', (event, url) => { calls.updateOpened = url; return true; });
+ipcMain.handle('update:install', () => { calls.updateInstalls += 1; return { ok: true }; });
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -141,6 +142,7 @@ async function main() {
     insurancePreview: document.getElementById('insurancePreview').textContent,
     version: document.getElementById('currentVersion').textContent,
     autoUpdate: document.getElementById('autoUpdateCheck').checked,
+    autoInstall: document.getElementById('autoInstallUpdates').checked,
     rest1Start: document.getElementById('overtimeRest1Start').value,
     rest1End: document.getElementById('overtimeRest1End').value,
     rest2Start: document.getElementById('overtimeRest2Start').value,
@@ -157,6 +159,7 @@ async function main() {
   ok('显示当前版本且默认自动检查更新',
     state.version === 'v1.0.0' && state.autoUpdate === true,
     state.version + ' / ' + state.autoUpdate);
+  ok('默认开启静默自动安装', state.autoInstall === true);
   ok('加班休息时段默认 12:00–13:30、18:00–18:30',
     state.rest1Start === '12:00' && state.rest1End === '13:30' &&
     state.rest2Start === '18:00' && state.rest2End === '18:30');
@@ -215,6 +218,15 @@ async function main() {
   await sleep(400);
   ok('可关闭每天自动检查更新',
     calls.saves.some((p) => p.autoUpdateCheck === false));
+
+  await run(`(() => {
+    const input = document.getElementById('autoInstallUpdates');
+    input.checked = false;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await sleep(400);
+  ok('可关闭静默自动安装',
+    calls.saves.some((p) => p.autoInstallUpdates === false));
 
   // 主题与自定义背景
   state = await run(`({
@@ -576,6 +588,7 @@ async function main() {
     theme: document.getElementById('themeSelect').value,
     bgHidden: document.getElementById('customBg').hidden,
     autoUpdate: document.getElementById('autoUpdateCheck').checked,
+    autoInstall: document.getElementById('autoInstallUpdates').checked,
     insurancePreview: document.getElementById('insurancePreview').textContent
   })`);
   ok('恢复默认后基础工资为 20000', state.base === '20000', state.base);
@@ -590,6 +603,7 @@ async function main() {
   ok('恢复默认后为深色主题且无背景',
     state.theme === 'dark' && state.bgHidden === true);
   ok('恢复默认后每天自动检查更新开启', state.autoUpdate === true);
+  ok('恢复默认后静默自动安装开启', state.autoInstall === true);
   ok('恢复默认后五险一金合计 3,100', state.insurancePreview === '¥3,100.00', state.insurancePreview);
 
   window.destroy();
