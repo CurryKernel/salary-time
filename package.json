@@ -1,7 +1,7 @@
 {
   "name": "salary-time",
   "productName": "SalaryTime",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "实时工资悬浮窗：当日、当刻、本月、本周收入一目了然",
   "main": "src/main.js",
   "type": "commonjs",

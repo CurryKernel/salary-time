@@ -4,13 +4,20 @@
 
 基于 Electron 构建，可打包为 Windows 安装包 / 免安装 exe，也提供 macOS 应用。
 
+## 项目地址 / 下载
+
+- GitHub 仓库：https://github.com/CurryKernel/salary-time
+- GitCode 仓库：https://gitcode.com/CurryKernel/salary-time
+- GitHub Releases（Windows exe / macOS DMG）：https://github.com/CurryKernel/salary-time/releases
+- GitCode 发行版：https://gitcode.com/CurryKernel/salary-time/releases
+
 <img src="docs/screenshot-widget.png" width="400" alt="悬浮窗主界面">
 
 <img src="docs/screenshot-settings.png" width="400" alt="设置面板">
 
 <img src="docs/screenshot-payslip.png" width="400" alt="工资单">
 
-> 安装包下载、更新说明与文件校验见 [v1.0.0 发布说明](docs/release-notes-v1.0.0.md)。
+> 安装包下载、更新说明与文件校验见 [v1.0.2 发布说明](docs/release-notes-v1.0.2.md)。
 
 ## 功能
 
@@ -156,8 +163,8 @@ npm run install:mac
 
 | 文件 | 说明 |
 | --- | --- |
-| `SalaryTime-Setup-1.0.0.exe` | 安装版。可选安装目录，自动创建桌面 / 开始菜单快捷方式「工资实时统计」 |
-| `SalaryTime-Portable-1.0.0.exe` | 免安装便携版，双击即用，可放到任意目录或 U 盘 |
+| `SalaryTime-Setup-1.0.2.exe` | 安装版。可选安装目录，自动创建桌面 / 开始菜单快捷方式「工资实时统计」 |
+| `SalaryTime-Portable-1.0.2.exe` | 免安装便携版，双击即用，可放到任意目录或 U 盘 |
 
 > 程序未做商业代码签名，首次运行 Windows SmartScreen 可能提示「Windows 已保护你的电脑」，点击「更多信息 → 仍要运行」即可。
 
@@ -183,7 +190,7 @@ npm install
 npm run dist:mac
 ```
 
-产物：`dist/SalaryTime-1.0.0-arm64.dmg`。未签名 DMG 在部分 macOS 上会被 Gatekeeper 拦截，日常使用推荐上面的 `npm run install:mac` 启动器方式。
+产物：`dist/SalaryTime-1.0.2-arm64.dmg`。未签名 DMG 在部分 macOS 上会被 Gatekeeper 拦截，日常使用推荐上面的 `npm run install:mac` 启动器方式。
 
 ## 打包 Windows exe
 
@@ -207,8 +214,8 @@ npm run dist:win
 
 产物在 `dist/`：
 
-- `SalaryTime-Setup-1.0.0.exe`
-- `SalaryTime-Portable-1.0.0.exe`
+- `SalaryTime-Setup-1.0.2.exe`
+- `SalaryTime-Portable-1.0.2.exe`
 
 ### macOS / Linux 交叉打包（无需 Wine）
 
